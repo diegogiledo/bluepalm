@@ -1,0 +1,176 @@
+import "server-only";
+import crypto from "crypto";
+import { db, one, getSetting } from "./db";
+import { newId, newToken } from "./auth";
+import { sendEmail, sendSms, siteUrl } from "./notify";
+import { TIME_WINDOWS, VEHICLES, POLICIES, LOYALTY } from "./config";
+import type { BookingInput } from "./validation";
+import type { Booking, Customer, Detailer, Package } from "./types";
+
+export const now = () => new Date().toISOString();
+/** Today's date (YYYY-MM-DD) in Florida time. */
+export const todayFL = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+export const vehicleLabel = (id: string) => VEHICLES.find((v) => v.id === id)?.label ?? id;
+export const windowLabel = (id: string) => {
+  const w = TIME_WINDOWS.find((t) => t.id === id);
+  return w ? `${w.label} (${w.hint})` : id;
+};
+export const money = (n: number | null | undefined) => (n == null ? "—" : `$${n.toFixed(2).replace(/\.00$/, "")}`);
+
+export async function activePackages(): Promise<Package[]> {
+  return (await db.select("packages", { active: true })).sort((a, b) => a.sort - b.sort);
+}
+
+export async function checkZip(zip: string) {
+  const z = await one("service_zips", { zip });
+  return z && z.enabled ? { available: true as const, city: z.city, county: z.county } : { available: false as const };
+}
+
+/** Approved detailers serving a ZIP's county. Only first name + initial are public. */
+export async function detailersForZip(zip: string) {
+  const z = await one("service_zips", { zip });
+  if (!z?.enabled) return [];
+  return (await db.select("detailers", { status: "approved" }))
+    .filter((d) => d.counties.includes(z.county))
+    .map((d) => ({ id: d.id, label: publicDetailerName(d) }));
+}
+export const publicDetailerName = (d: Pick<Detailer, "name">) => {
+  const [first, last] = d.name.split(/\s+/);
+  return last ? `${first} ${last[0]}.` : first;
+};
+
+function bookingRef() {
+  return "BP-" + crypto.randomBytes(4).toString("hex").toUpperCase().slice(0, 6);
+}
+
+function addDays(date: string, days: number) {
+  const d = new Date(date + "T12:00:00Z");
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+export const nextRecurringDate = (from: string, freq: "biweekly" | "monthly") => addDays(from, freq === "biweekly" ? 14 : 30);
+
+export async function upsertCustomer(input: { email: string; name: string; phone: string; sms_opt_in?: boolean }) {
+  const existing = await one("customers", { email: input.email });
+  if (existing) {
+    await db.update("customers", { id: existing.id }, { phone: input.phone || existing.phone, sms_opt_in: Boolean(existing.sms_opt_in || input.sms_opt_in) });
+    return { customer: existing, isNew: false };
+  }
+  const c: Customer = {
+    id: newId(), email: input.email, name: input.name, phone: input.phone,
+    access_token: newToken(), loyalty_points: 0, sms_opt_in: Boolean(input.sms_opt_in), created_at: now(),
+  };
+  await db.insert("customers", c);
+  return { customer: c, isNew: true };
+}
+
+export async function createBooking(input: BookingInput, opts: { recurringPlanId?: string; customer?: Customer } = {}) {
+  const area = await checkZip(input.zip);
+  if (!area.available) throw new UserError("zip", "We don't serve this ZIP code yet.");
+
+  const today = todayFL();
+  if (input.date <= today) throw new UserError("date", "Please choose a date from tomorrow onward.");
+  if (input.date > addDays(today, 120)) throw new UserError("date", "Please choose a date within the next 4 months.");
+
+  let pkg: Package | null = null;
+  if (input.package_id !== "custom") {
+    pkg = await one("packages", { id: input.package_id });
+    if (!pkg?.active) throw new UserError("package_id", "That service is not available.");
+  }
+  let preferred: string | null = null;
+  if (input.preferred_detailer_id) {
+    const ok = (await detailersForZip(input.zip)).some((d) => d.id === input.preferred_detailer_id);
+    preferred = ok ? input.preferred_detailer_id : null;
+  }
+
+  const { customer, isNew } = opts.customer
+    ? { customer: opts.customer, isNew: false }
+    : await upsertCustomer({ email: input.email, name: input.name, phone: input.phone, sms_opt_in: input.sms_opt_in });
+
+  let planId = opts.recurringPlanId ?? null;
+  if (!planId && (input.frequency === "biweekly" || input.frequency === "monthly")) {
+    planId = newId();
+    await db.insert("recurring_plans", {
+      id: planId, customer_id: customer.id, frequency: input.frequency, package_id: input.package_id,
+      vehicle: input.vehicle, zip: input.zip, address: input.address, city: input.city,
+      time_window: input.time_window, preferred_detailer_id: preferred, status: "active",
+      next_date: nextRecurringDate(input.date, input.frequency), created_at: now(),
+    });
+  }
+
+  const booking: Booking = {
+    id: newId(), ref: bookingRef(), customer_id: customer.id,
+    zip: input.zip, address: input.address, city: input.city,
+    vehicle: input.vehicle, vehicle_details: input.vehicle_details ?? "",
+    package_id: input.package_id, package_name: pkg?.name ?? "Custom quote",
+    price_estimate: pkg?.base_price ?? null,
+    date: input.date, time_window: input.time_window, preferred_detailer_id: preferred,
+    instructions: input.instructions ?? "", status: "requested", detailer_id: null,
+    recurring_plan_id: planId, commission_rate: null, final_price: null,
+    payment_status: "unpaid", refund_amount: 0, payment_intent: null, checkout_url: null,
+    cancel_reason: "", customer_rating: null, customer_feedback: "",
+    created_at: now(), completed_at: null,
+  };
+  await db.insert("bookings", booking);
+
+  const accountUrl = siteUrl(`/account/enter?token=${customer.access_token}`);
+  await sendEmail(customer.email, `We received your booking request ${booking.ref}`, [
+    `Hi ${customer.name.split(" ")[0]}, thanks for choosing BluePalm.`,
+    `${booking.package_name} for your ${vehicleLabel(booking.vehicle).toLowerCase()} on ${booking.date}, ${windowLabel(booking.time_window)}, in ${booking.city}.`,
+    `This is a request, not a confirmed appointment yet. Our team will review it and confirm by email${input.sms_opt_in ? " and text" : ""} shortly.`,
+    booking.price_estimate != null ? `Starting price: ${money(booking.price_estimate)} — the final price may vary with vehicle size and condition. You won't be charged until your service is confirmed.` : "We'll follow up with a custom quote before anything is scheduled.",
+    POLICIES.cancellation,
+  ], { label: "View your bookings", url: accountUrl });
+  if (process.env.ADMIN_NOTIFY_EMAIL) {
+    await sendEmail(process.env.ADMIN_NOTIFY_EMAIL, `New booking request ${booking.ref}`, [
+      `${booking.package_name} · ${vehicleLabel(booking.vehicle)} · ${booking.city} ${booking.zip} · ${booking.date} ${booking.time_window}`,
+    ], { label: "Open in admin", url: siteUrl(`/admin/bookings/${booking.id}`) });
+  }
+  return { booking, isNewCustomer: isNew, accountToken: isNew ? customer.access_token : null };
+}
+
+export class UserError extends Error {
+  constructor(public field: string, message: string) { super(message); }
+}
+
+/** Called when admin confirms a request. */
+export async function notifyConfirmed(b: Booking) {
+  const c = await one("customers", { id: b.customer_id });
+  if (!c) return;
+  const url = siteUrl(`/account/enter?token=${c.access_token}`);
+  await sendEmail(c.email, `Your BluePalm detail is confirmed — ${b.ref}`, [
+    `Great news, ${c.name.split(" ")[0]}! Your ${b.package_name} on ${b.date}, ${windowLabel(b.time_window)}, is confirmed.`,
+    `We'll let you know when a detailer is assigned. You can message us any time from your account page — please keep all communication through BluePalm.`,
+    POLICIES.cancellation,
+  ], { label: "Manage booking", url });
+  if (c.sms_opt_in) await sendSms(c.phone, `BluePalm: your ${b.package_name} on ${b.date} is confirmed (${b.ref}). Manage it: ${url}`);
+}
+
+export async function completeBooking(b: Booking) {
+  const price = b.final_price ?? b.price_estimate ?? 0;
+  const rate = b.commission_rate ?? (await commissionFor(b.detailer_id));
+  await db.update("bookings", { id: b.id }, { status: "completed", completed_at: now(), final_price: price, commission_rate: rate });
+  const c = await one("customers", { id: b.customer_id });
+  if (c) {
+    const per = await getSetting("loyalty_points_per_dollar", LOYALTY.pointsPerDollar);
+    await db.update("customers", { id: c.id }, { loyalty_points: c.loyalty_points + Math.round(price * per) });
+    await sendEmail(c.email, `Your car is sparkling — ${b.ref} complete`, [
+      `Thanks for choosing BluePalm, ${c.name.split(" ")[0]}! Your ${b.package_name} is complete.`,
+      `You earned ${Math.round(price * per)} loyalty points. Rate your detailer and rebook in one tap from your account.`,
+      POLICIES.guarantee,
+    ], { label: "Rate & rebook", url: siteUrl(`/account/enter?token=${c.access_token}`) });
+  }
+}
+
+export async function commissionFor(detailerId: string | null) {
+  const global = await getSetting("commission_rate", 0.2);
+  if (!detailerId) return global;
+  const d = await one("detailers", { id: detailerId });
+  return d?.commission_rate ?? global;
+}
+
+export async function addMessage(bookingId: string, sender: "customer" | "detailer" | "admin", body: string) {
+  body = body.trim().slice(0, 1500);
+  if (!body) return;
+  await db.insert("messages", { id: newId(), booking_id: bookingId, sender, body, created_at: now() });
+}
