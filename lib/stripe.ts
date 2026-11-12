@@ -69,8 +69,24 @@ export async function createBookingCheckout(opts: {
   }, `checkout-${opts.bookingId}-${opts.amountCents}`);
 }
 
+/**
+ * Refund (all or part of) a payment. When the payment was split with a
+ * detailer through Connect, the detailer's share and BluePalm's fee are
+ * reversed proportionally; Stripe rejects those options on payments that
+ * weren't split, so they're only sent when there was a transfer.
+ */
 export async function refundPaymentIntent(paymentIntent: string, amountCents: number) {
-  return stripe("refunds", { payment_intent: paymentIntent, amount: amountCents, reverse_transfer: true, refund_application_fee: true });
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key) throw new StripeNotConfigured();
+  const res = await fetch(`https://api.stripe.com/v1/payment_intents/${encodeURIComponent(paymentIntent)}`, { headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(10000) });
+  const pi = await res.json();
+  if (!res.ok) throw new Error(`Stripe: ${pi?.error?.message ?? res.status}`);
+  const split = Boolean(pi.transfer_data?.destination);
+  return stripe("refunds", {
+    payment_intent: paymentIntent, amount: amountCents,
+    ...(split ? { reverse_transfer: true } : {}),
+    ...(split && pi.application_fee_amount ? { refund_application_fee: true } : {}),
+  });
 }
 
 /** Verify a Stripe webhook signature (v1 scheme, 5 minute tolerance). */

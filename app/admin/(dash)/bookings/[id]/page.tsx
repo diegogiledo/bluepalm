@@ -90,6 +90,7 @@ export default async function BookingDetail({ params }: PageProps<"/admin/bookin
             <b>Payment</b>
             {b.card_label && <p className="mt-1">Card on file: <b>{b.card_label}</b>. It&apos;s charged {money(price)} automatically when the job is marked complete.</p>}
             {b.payment_status === "payment_failed" && <p className="mt-1 font-semibold text-red-600">Charge failed: {b.payment_error ?? "unknown error"}</p>}
+            {b.payment_error?.startsWith("Refund failed") && <p className="mt-1 font-semibold text-red-600">{b.payment_error}</p>}
             {stripeEnabled() ? (
               <div className="mt-2 flex flex-wrap gap-2">
                 {isAdmin && b.card_label && b.payment_status !== "paid" && price != null && (

@@ -117,9 +117,16 @@ export async function cancelOrRefund(form: FormData) {
     const paid = amountDue(b) ?? 0;
     const amt = Math.min(refund, paid - b.refund_amount);
     if (amt <= 0) return;
-    if (b.payment_intent && stripeEnabled()) await refundPaymentIntent(b.payment_intent, Math.round(amt * 100));
+    if (b.payment_intent && stripeEnabled()) {
+      try { await refundPaymentIntent(b.payment_intent, Math.round(amt * 100)); }
+      catch (e) {
+        // show the reason on the booking page instead of crashing
+        await db.update("bookings", { id: b.id }, { payment_error: `Refund failed: ${String((e as Error).message ?? e).replace(/^Stripe: /, "").slice(0, 280)}` });
+        return done(b.id);
+      }
+    }
     const total = b.refund_amount + amt;
-    await db.update("bookings", { id: b.id }, { refund_amount: total, payment_status: total >= paid ? "refunded" : "partially_refunded" });
+    await db.update("bookings", { id: b.id }, { refund_amount: total, payment_error: null, payment_status: total >= paid ? "refunded" : "partially_refunded" });
   }
   if (str(form, "cancel") === "1" && b.status !== "cancelled" && b.status !== "completed") {
     await db.update("bookings", { id: b.id }, { status: "cancelled", cancel_reason: `Cancelled by BluePalm: ${reason}` });
