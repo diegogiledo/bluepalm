@@ -1,6 +1,7 @@
 import { Hero } from "@/components/home/hero";
 import { HowItWorks, Services, WhyBluePalm, Stats, Testimonials, FAQ, FinalCTA } from "@/components/home/sections";
 import { ServiceArea } from "@/components/home/service-area";
+import { TravelCar } from "@/components/home/travel-car";
 import { activePackages } from "@/lib/services";
 import { db } from "@/lib/db";
 import { FAQS } from "@/lib/faq";
@@ -41,7 +42,8 @@ export default async function Home() {
       <ServiceArea />
       <Testimonials />
       <FAQ items={FAQS} />
-      <FinalCTA />
+      <FinalCTA parking />
+      <TravelCar />
     </>
   );
 }

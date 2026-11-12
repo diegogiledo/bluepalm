@@ -9,8 +9,8 @@ import { AnimatePresence, motion, useMotionValue, useReducedMotion, useSpring } 
  * Grime lives on a <canvas> erased with destination-out; the clean car is SVG.
  */
 const VW = 612, VH = 300;
-const BODY = "M40 205 Q38 172 72 166 L150 154 Q192 108 252 100 L380 98 Q432 100 472 148 L540 160 Q572 166 572 196 L572 212 Q572 222 560 222 L52 222 Q40 222 40 212 Z";
-const WHEELS = [150, 462];
+export const BODY = "M40 205 Q38 172 72 166 L150 154 Q192 108 252 100 L380 98 Q432 100 472 148 L540 160 Q572 166 572 196 L572 212 Q572 222 560 222 L52 222 Q40 222 40 212 Z";
+export const WHEELS = [150, 462];
 const SPARKLES = [[110, 165], [250, 118], [400, 122], [525, 172], [330, 190], [190, 196]];
 const DONE_AT = 0.86;
 
@@ -258,7 +258,7 @@ export function ScrubCar() {
   return (
     <div className="relative mx-auto w-full max-w-5xl select-none">
       <div
-        ref={wrap}
+        ref={wrap} data-hero-car
         onPointerMove={onMove} onPointerDown={onMove} onPointerLeave={onLeave} onPointerUp={() => { last.current = null; }}
         className={`relative aspect-[612/300] w-full ${done ? "" : "cursor-none touch-none"}`}
         role="img" aria-label={done ? "A spotless, freshly washed car" : "A dirty car. Move your mouse or drag across it to scrub it clean."}

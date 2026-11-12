@@ -54,3 +54,7 @@ section[id] { scroll-margin-top: 84px; }
 }
 @keyframes bp-pulse { 0% { transform: scale(0.6); opacity: 0.7; } 100% { transform: scale(2.6); opacity: 0; } }
 .map-pulse { transform-box: fill-box; transform-origin: center; animation: bp-pulse 2.4s ease-out infinite; }
+
+/* Homepage driving car: quick sparkle wash when it leaves the hero */
+.tc-car.tc-wash svg { animation: tc-wash 0.9s ease-out; }
+@keyframes tc-wash { 0% { filter: brightness(1.9) drop-shadow(0 0 22px #ffffff); } 100% { filter: brightness(1) drop-shadow(0 18px 18px rgba(3,15,40,0.35)); } }

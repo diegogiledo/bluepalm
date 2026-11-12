@@ -209,14 +209,16 @@ export function FAQ({ items }: { items: Faq[] }) {
   );
 }
 
-export function FinalCTA() {
+export function FinalCTA({ parking = false }: { parking?: boolean }) {
   return (
-    <section className="bg-white pb-24">
+    <section id="get-started" className="bg-white pb-24">
       <div className="container-x">
         <Reveal>
           <div className="bg-hero relative overflow-hidden rounded-[2.5rem] px-6 py-16 text-center text-white sm:px-16 sm:py-20">
             <motion.div aria-hidden className="absolute -left-20 -top-20 h-72 w-72 rounded-full bg-white/10" animate={{ scale: [1, 1.15, 1] }} transition={{ duration: 8, repeat: Infinity }} />
             <motion.div aria-hidden className="absolute -bottom-24 -right-10 h-80 w-80 rounded-full bg-palm/30 blur-2xl" animate={{ scale: [1.1, 1, 1.1] }} transition={{ duration: 9, repeat: Infinity }} />
+            {/* the homepage's driving car parks here */}
+            {parking && <div data-car-park aria-hidden className="relative mx-auto -mt-4 mb-4 aspect-[612/300] w-32 sm:-mt-6 sm:w-48" />}
             <h2 className="relative font-display text-3xl font-extrabold sm:text-5xl">Your car deserves a little BluePalm.</h2>
             <Link href="/book" className="btn relative mt-8 bg-white px-9 py-4 text-brand hover:-translate-y-0.5 hover:bg-sky">BOOK YOUR DETAIL</Link>
           </div>
