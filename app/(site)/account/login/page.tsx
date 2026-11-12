@@ -1,12 +1,16 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { MagicLinkForm } from "@/components/portal-forms";
+import { redirect } from "next/navigation";
 import { requestMagicLink } from "../../account/actions";
+import { getCustomer } from "@/lib/portal";
 
 export const metadata: Metadata = { title: "My bookings", robots: { index: false } };
+export const dynamic = "force-dynamic";
 
 export default async function LoginPage({ searchParams }: PageProps<"/account/login">) {
   const { invalid } = await searchParams;
+  if (await getCustomer()) redirect("/account"); // already signed in
   return (
     <div className="grid min-h-screen place-items-center bg-gradient-to-b from-sky to-white px-4 pt-24 pb-16">
       <div className="card w-full max-w-md p-8">

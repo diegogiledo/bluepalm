@@ -33,13 +33,19 @@ const EMPTY: Mem = {
 let mem: Mem | null = null;
 let queue: Promise<unknown> = Promise.resolve();
 
+let loadedMtime = 0;
+// The dev server can load this module more than once (route handlers and
+// pages), so reload whenever another instance has written the file.
 async function load(): Promise<Mem> {
-  if (mem) return mem;
+  let mtime = 0;
+  try { mtime = (await fs.stat(DB_FILE)).mtimeMs; } catch {}
+  if (mem && mtime === loadedMtime) return mem;
   try {
     mem = { ...EMPTY, ...JSON.parse(await fs.readFile(DB_FILE, "utf8")) } as Mem;
   } catch {
-    mem = structuredClone(EMPTY);
+    mem ??= structuredClone(EMPTY);
   }
+  loadedMtime = mtime;
   return mem;
 }
 async function persist() {
@@ -52,6 +58,7 @@ async function persist() {
   const tmp = DB_FILE + ".tmp";
   await fs.writeFile(tmp, JSON.stringify(mem, null, 2));
   await fs.rename(tmp, DB_FILE);
+  try { loadedMtime = (await fs.stat(DB_FILE)).mtimeMs; } catch {}
 }
 function matches(row: Record<string, unknown>, f?: Record<string, unknown>) {
   if (!f) return true;
