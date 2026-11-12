@@ -76,7 +76,7 @@ function Car({ clean }: { clean: boolean }) {
   );
 }
 
-export function Sponge() {
+function Sponge() {
   return (
     <svg viewBox="0 0 100 80" className="h-full w-full drop-shadow-[0_10px_14px_rgba(0,0,0,0.35)]" aria-hidden="true">
       <rect x="6" y="22" width="88" height="52" rx="14" fill="#ffd04d" />
