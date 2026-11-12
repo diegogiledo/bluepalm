@@ -9,7 +9,7 @@ export const bookingSchema = z.object({
   zip,
   address: text(160).min(4, "Enter your street address"),
   city: text(80).min(2, "Enter your city"),
-  vehicle: z.enum(VEHICLES.map((v) => v.id) as [string, ...string[]], { message: "Choose a vehicle type" }),
+  vehicle: z.enum(VEHICLES.map((v) => v.id) as [string, ...string[]], { message: "Choose your vehicle size" }),
   vehicle_details: text(120).optional().default(""),
   package_id: z.string().min(1, "Choose a service"),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Choose a date"),

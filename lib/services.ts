@@ -3,7 +3,7 @@ import crypto from "crypto";
 import { db, one, getSetting } from "./db";
 import { newId, newToken } from "./auth";
 import { sendEmail, siteUrl } from "./notify";
-import { TIME_WINDOWS, VEHICLES, POLICIES, LOYALTY, PROMOS } from "./config";
+import { TIME_WINDOWS, VEHICLES, LEGACY_VEHICLE_LABELS, POLICIES, LOYALTY, PROMOS } from "./config";
 import { amountDue } from "./pricing";
 import type { BookingInput } from "./validation";
 import type { Booking, Customer, Detailer, Package } from "./types";
@@ -11,7 +11,7 @@ import type { Booking, Customer, Detailer, Package } from "./types";
 export const now = () => new Date().toISOString();
 /** Today's date (YYYY-MM-DD) in Florida time. */
 export const todayFL = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
-export const vehicleLabel = (id: string) => VEHICLES.find((v) => v.id === id)?.label ?? id;
+export const vehicleLabel = (id: string) => { const v = VEHICLES.find((x) => x.id === id); return v ? `${v.label} vehicle` : LEGACY_VEHICLE_LABELS[id] ?? id; };
 export const windowLabel = (id: string) => {
   const w = TIME_WINDOWS.find((t) => t.id === id);
   return w ? `${w.label} (${w.hint})` : id;

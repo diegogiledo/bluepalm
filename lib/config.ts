@@ -73,14 +73,15 @@ export const PACKAGE_SEED: PackageSeed[] = [
 ];
 
 export const VEHICLES = [
-  { id: "sedan", label: "Sedan" },
-  { id: "coupe", label: "Coupe" },
-  { id: "small-suv", label: "Small SUV" },
-  { id: "large-suv", label: "Large SUV" },
-  { id: "pickup", label: "Pickup truck" },
-  { id: "van", label: "Van" },
-  { id: "other", label: "Other" },
+  { id: "small", label: "Small", hint: "Sedans, coupes, hatchbacks and compact cars.", examples: "Honda Civic, Toyota Corolla, Tesla Model 3, Mazda MX-5" },
+  { id: "medium", label: "Medium", hint: "Crossovers, small and mid-size SUVs and small pickups.", examples: "Toyota RAV4, Honda CR-V, Tesla Model Y, Ford Maverick" },
+  { id: "large", label: "Large", hint: "Full-size and 3-row SUVs, full-size trucks, minivans and vans.", examples: "Chevy Tahoe, Ford F-150, Honda Odyssey, Mercedes Sprinter" },
 ] as const;
+
+// Vehicle types used before sizes were simplified; kept so older bookings still display nicely.
+export const LEGACY_VEHICLE_LABELS: Record<string, string> = {
+  sedan: "Sedan", coupe: "Coupe", "small-suv": "Small SUV", "large-suv": "Large SUV", pickup: "Pickup truck", van: "Van", other: "Other",
+};
 
 export const TIME_WINDOWS = [
   { id: "morning", label: "Morning", hint: "8am – 11am" },
