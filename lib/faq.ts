@@ -15,7 +15,7 @@ export const FAQS = [
   },
   {
     q: "How does pricing work?",
-    a: "Each package has a clear starting price. Your final price depends on vehicle size and condition and is always confirmed with you before you pay. Payments are handled securely through BluePalm — never directly with the detailer.",
+    a: "Each package has a clear starting price. Your final price depends on vehicle size and condition. When you book, you save a card or Apple Pay securely with Stripe; it is only charged after your service is complete. Payments always go through BluePalm, never directly to the detailer.",
   },
   {
     q: "Does my vehicle size change the price?",

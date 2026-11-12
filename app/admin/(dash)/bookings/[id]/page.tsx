@@ -7,7 +7,7 @@ import { commissionFor, money, vehicleLabel, windowLabel } from "@/lib/services"
 import { stripeEnabled } from "@/lib/stripe";
 import { Badge, Thread, fmtDate } from "@/components/ui";
 import { Submit } from "@/components/portal-forms";
-import { adminMessage, assignDetailer, cancelOrRefund, markPaid, sendPaymentLink, setBookingStatus, updatePricing } from "../../../actions";
+import { adminMessage, assignDetailer, cancelOrRefund, chargeCard, markPaid, sendPaymentLink, setBookingStatus, updatePricing } from "../../../actions";
 
 export default async function BookingDetail({ params }: PageProps<"/admin/bookings/[id]">) {
   const staff = await requireStaff();
@@ -88,9 +88,14 @@ export default async function BookingDetail({ params }: PageProps<"/admin/bookin
           </form>
           <div className="rounded-2xl bg-sky/50 p-4 text-sm">
             <b>Payment</b>
+            {b.card_label && <p className="mt-1">Card on file: <b>{b.card_label}</b>. It&apos;s charged {money(price)} automatically when the job is marked complete.</p>}
+            {b.payment_status === "payment_failed" && <p className="mt-1 font-semibold text-red-600">Charge failed: {b.payment_error ?? "unknown error"}</p>}
             {stripeEnabled() ? (
               <div className="mt-2 flex flex-wrap gap-2">
-                {b.payment_status === "unpaid" && price != null && <form action={sendPaymentLink}><input type="hidden" name="id" value={b.id} /><Submit className="btn-primary btn-sm">Send Stripe payment link</Submit></form>}
+                {isAdmin && b.card_label && b.payment_status !== "paid" && price != null && (
+                  <form action={chargeCard}><input type="hidden" name="id" value={b.id} /><Submit className="btn-green btn-sm" pending="Charging…">{b.payment_status === "payment_failed" ? "Retry card" : "Charge saved card now"} ({money(price)})</Submit></form>
+                )}
+                {["unpaid", "payment_failed"].includes(b.payment_status) && price != null && <form action={sendPaymentLink}><input type="hidden" name="id" value={b.id} /><Submit className="btn-primary btn-sm">Send Stripe payment link</Submit></form>}
                 {b.checkout_url && <a href={b.checkout_url} className="text-brand underline" target="_blank" rel="noreferrer">Checkout link</a>}
               </div>
             ) : <p className="mt-1 text-ink-muted">Stripe isn&apos;t configured — set STRIPE_SECRET_KEY to send secure payment links.</p>}

@@ -12,6 +12,15 @@ export async function POST(req: Request) {
     const id = s.metadata?.booking_id ?? s.client_reference_id;
     if (id && s.payment_status === "paid") await db.update("bookings", { id }, { payment_status: "paid", payment_intent: s.payment_intent ?? null });
   }
+  // saved-card charges made after the service
+  if (event.type === "payment_intent.succeeded" || event.type === "payment_intent.payment_failed") {
+    const pi = event.data.object;
+    const id = pi.metadata?.booking_id;
+    if (id) {
+      const ok = event.type === "payment_intent.succeeded";
+      await db.update("bookings", { id }, { payment_status: ok ? "paid" : "payment_failed", payment_intent: pi.id, payment_error: ok ? null : pi.last_payment_error?.message ?? "Payment failed" });
+    }
+  }
   if (event.type === "account.updated") {
     const a = event.data.object;
     if (a.payouts_enabled) {

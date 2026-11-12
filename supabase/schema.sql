@@ -59,6 +59,7 @@ create table if not exists bookings (
   payment_status text not null default 'unpaid', refund_amount numeric(10,2) not null default 0,
   payment_intent text, checkout_url text, cancel_reason text not null default '',
   promo_code text, discount_pct numeric(5,2) not null default 0,
+  stripe_customer_id text, payment_method_id text, card_label text, payment_error text,
   customer_rating smallint check (customer_rating between 1 and 5), customer_feedback text not null default '',
   created_at timestamptz not null default now(), completed_at timestamptz
 );

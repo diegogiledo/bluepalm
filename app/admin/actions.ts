@@ -4,7 +4,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { db, one, setSetting } from "@/lib/db";
 import { authenticateStaff, endStaffSession, loginRateLimited, requireStaff, startStaffSession } from "@/lib/auth";
-import { addMessage, commissionFor, completeBooking, createBooking, nextRecurringDate, notifyConfirmed, todayFL } from "@/lib/services";
+import { addMessage, chargeBookingCard, commissionFor, completeBooking, createBooking, nextRecurringDate, notifyConfirmed, savedPaymentOf, todayFL } from "@/lib/services";
 import { sendEmail, siteUrl } from "@/lib/notify";
 import { createBookingCheckout, refundPaymentIntent, stripeEnabled } from "@/lib/stripe";
 import type { BookingStatus } from "@/lib/types";
@@ -228,8 +228,8 @@ export async function generateRecurring(form: FormData) {
   await createBooking({
     zip: plan.zip, address: plan.address, city: plan.city, vehicle: plan.vehicle, vehicle_details: "",
     package_id: plan.package_id, date, time_window: plan.time_window, preferred_detailer_id: plan.preferred_detailer_id,
-    frequency: "none", name: c.name, email: c.email, phone: c.phone, instructions: "Recurring plan visit", promo: "",
-  }, { customer: c, recurringPlanId: plan.id });
+    frequency: "none", name: c.name, email: c.email, phone: c.phone, instructions: "Recurring plan visit", promo: "", setup_intent: "",
+  }, { customer: c, recurringPlanId: plan.id, payment: savedPaymentOf((await db.select("bookings", { customer_id: c.id })).filter((x) => x.payment_method_id).sort((x, y) => y.created_at.localeCompare(x.created_at))[0]) });
   await db.update("recurring_plans", { id: plan.id }, { next_date: nextRecurringDate(date, plan.frequency) });
   revalidatePath("/admin/recurring");
 }
@@ -240,4 +240,12 @@ export async function setPlanStatus(form: FormData) {
   if (!["active", "paused", "cancelled"].includes(status)) return;
   await db.update("recurring_plans", { id: str(form, "id") }, { status: status as "active" });
   revalidatePath("/admin/recurring");
+}
+
+export async function chargeCard(form: FormData) {
+  await requireStaff(["admin"]);
+  const b = await bookingOr404(str(form, "id"));
+  if (b.payment_status === "paid") return;
+  await chargeBookingCard(b);
+  done(b.id);
 }

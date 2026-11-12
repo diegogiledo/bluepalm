@@ -87,6 +87,8 @@ export default async function AccountPage() {
                     <p className="text-sm text-ink-muted">{fmtDate(b.date)} · {windowLabel(b.time_window)} · {vehicleLabel(b.vehicle)} · {b.address}, {b.city}</p>
                     <p className="mt-1 text-sm">Starting price {money(b.price_estimate)}{b.promo_code ? ` · ${b.discount_pct}% off with ${b.promo_code}` : ""}{dName(b.detailer_id) ? ` · Detailer: ${dName(b.detailer_id)}` : ""}</p>
                     {b.checkout_url && b.payment_status === "payment_link_sent" && <a href={b.checkout_url} className="btn-green btn-sm mt-3">Pay securely</a>}
+                    {b.card_label && b.payment_status === "card_on_file" && <p className="mt-1 text-xs text-ink-muted">💳 {b.card_label}: charged after your service</p>}
+                    {b.payment_status === "payment_failed" && <p className="mt-1 text-xs font-semibold text-red-600">We couldn&apos;t charge your saved card. We&apos;ll email you a secure payment link.</p>}
                   </div>
                   <Badge status={b.status} />
                 </div>

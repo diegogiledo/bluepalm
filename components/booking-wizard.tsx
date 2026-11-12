@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { VEHICLES, TIME_WINDOWS, FREQUENCIES, POLICIES, PROMOS } from "@/lib/config";
 import { Icon } from "./home/hero";
 import { AddressAutocomplete, type PickedAddress } from "./address-autocomplete";
+import { CardField, cardsEnabled, type CardHandle } from "./card-field";
 
 type Pkg = { id: string; name: string; base_price: number; tagline: string; features: string[] };
 type Data = {
@@ -34,12 +35,13 @@ export function BookingWizard({ packages, initialPackage, initialZip, initialPro
   const [zipInfo, setZipInfo] = useState<{ city: string; county: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [detailers, setDetailers] = useState<{ id: string; label: string }[]>([]);
-  const [done, setDone] = useState<{ ref: string; accountToken: string | null; promoStatus?: string } | null>(null);
+  const [done, setDone] = useState<{ ref: string; accountToken: string | null; promoStatus?: string; card?: string | null } | null>(null);
   const [formError, setFormError] = useState("");
 
   const set = <K extends keyof Data>(k: K, v: Data[K]) => { setD((x) => ({ ...x, [k]: v })); setErrors((e) => ({ ...e, [k]: "" })); };
   const pkg = packages.find((p) => p.id === d.package_id);
   const [help, setHelp] = useState<string | null>(null);
+  const cardRef = useRef<CardHandle>(null);
   const [locating, setLocating] = useState(false);
   const [locNote, setLocNote] = useState("");
 
@@ -121,9 +123,20 @@ export function BookingWizard({ packages, initialPackage, initialZip, initialPro
     if (!(await validate(LAST))) return;
     setBusy(true); setFormError("");
     try {
+      // save the card / Apple Pay with Stripe first (nothing is charged)
+      let setup_intent = "";
+      if (cardsEnabled) {
+        const res = await cardRef.current?.confirm({ name: d.name.trim(), email: d.email.trim(), phone: d.phone });
+        if (!res?.setupIntent) {
+          setErrors((e) => ({ ...e, card: res?.error ?? "Please add a payment method." }));
+          setFormError(res?.error ?? "Please add a payment method.");
+          setBusy(false); return;
+        }
+        setup_intent = res.setupIntent;
+      }
       const r = await fetch("/api/bookings", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...d, preferred_detailer_id: d.preferred_detailer_id || null }),
+        body: JSON.stringify({ ...d, preferred_detailer_id: d.preferred_detailer_id || null, setup_intent }),
       });
       const j = await r.json();
       if (!r.ok) {
@@ -135,7 +148,7 @@ export function BookingWizard({ packages, initialPackage, initialZip, initialPro
           if (first !== undefined) goto(first);
         }
       } else {
-        setDone({ ref: j.ref, accountToken: j.accountToken, promoStatus: j.promoStatus });
+        setDone({ ref: j.ref, accountToken: j.accountToken, promoStatus: j.promoStatus, card: j.card });
         window.scrollTo({ top: 0, behavior: "smooth" });
       }
     } catch { setFormError("Network error — please check your connection and try again."); }
@@ -159,7 +172,7 @@ export function BookingWizard({ packages, initialPackage, initialZip, initialPro
         {done.promoStatus === "applied" && <p className="mt-3 inline-flex rounded-full bg-palm/15 px-3 py-1 text-sm font-bold text-palm-600">🎁 {promo?.label ?? "Your discount"} is applied</p>}
         {done.promoStatus === "not_first_booking" && <p className="mt-3 text-sm text-ink-muted">The {promo?.code} offer is for first-time customers, so it wasn&apos;t applied to this booking.</p>}
         <div className="mt-6 rounded-2xl bg-sky p-5 text-left text-sm leading-relaxed text-navy">
-          <p><b>What happens next:</b> this is a booking <b>request</b>. Our team will review it, match you with a local detailer and confirm your appointment by email. You won&apos;t be charged until your service is confirmed.</p>
+          <p><b>What happens next:</b> this is a booking <b>request</b>. Our team will review it, match you with a local detailer and confirm your appointment by email. {done.card ? <>Your <b>{done.card}</b> is saved securely and only charged after your service is complete.</> : <>You won&apos;t be charged until your service is confirmed.</>}</p>
           <p className="mt-3 text-ink-muted">{POLICIES.cancellation}</p>
         </div>
         <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
@@ -318,6 +331,22 @@ export function BookingWizard({ packages, initialPackage, initialZip, initialPro
                   </Field>
                   <input tabIndex={-1} autoComplete="off" className="hidden" aria-hidden value={d.website} onChange={(e) => set("website", e.target.value)} name="website" />
                 </div>
+                {cardsEnabled && (
+                  <section className="mt-8" aria-labelledby="pay-heading">
+                    <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+                      <h3 id="pay-heading" className="font-display text-lg font-bold">Payment</h3>
+                      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
+                        <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V8a4 4 0 018 0v3" /></svg>
+                        Secured by Stripe
+                      </span>
+                    </div>
+                    <p className="mb-4 rounded-2xl bg-palm/10 px-4 py-3 text-sm font-semibold text-palm-600">
+                      You won&apos;t be charged now. Your card is saved securely and only charged after your service is complete.
+                    </p>
+                    <CardField handle={cardRef} />
+                    {errors.card && <p className="field-error" role="alert">{errors.card}</p>}
+                  </section>
+                )}
                 <p className="mt-6 rounded-2xl bg-sky p-4 text-sm text-navy">
                   {pkg ? <>Starting price <b>${pkg.base_price}</b>{promo ? <>, {promo.pct}% off with <b>{promo.code}</b> if this is your first booking</> : null}. Final price may vary with vehicle size and condition and will be confirmed before payment.</> : <>We&apos;ll send a custom quote before anything is scheduled.</>}
                   {" "}Submitting sends a request — it is not yet a confirmed appointment.

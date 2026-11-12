@@ -22,7 +22,7 @@ export default async function BookPage({ searchParams }: PageProps<"/book">) {
         <div className="mx-auto mb-10 max-w-3xl text-center">
           <span className="eyebrow">Book your detail</span>
           <h1 className="h2 mt-4">Let&apos;s get your car sparkling</h1>
-          <p className="lead mt-3">A few quick steps. No payment needed to request — we confirm first.</p>
+          <p className="lead mt-3">A few quick steps. Nothing is charged until after your service.</p>
         </div>
         <BookingWizard packages={packages} initialPackage={one(sp.package)} initialZip={zip && /^\d{5}$/.test(zip) ? zip : undefined} initialPromo={promo} />
       </div>

@@ -5,6 +5,7 @@ import { newId, newToken } from "./auth";
 import { sendEmail, siteUrl } from "./notify";
 import { TIME_WINDOWS, VEHICLES, LEGACY_VEHICLE_LABELS, POLICIES, LOYALTY, PROMOS } from "./config";
 import { amountDue } from "./pricing";
+import { chargeSavedCard, stripeEnabled } from "./stripe";
 import type { BookingInput } from "./validation";
 import type { Booking, Customer, Detailer, Package } from "./types";
 
@@ -65,7 +66,8 @@ export async function upsertCustomer(input: { email: string; name: string; phone
   return { customer: c, isNew: true };
 }
 
-export async function createBooking(input: BookingInput, opts: { recurringPlanId?: string; customer?: Customer } = {}) {
+export type SavedPayment = { customer: string; paymentMethod: string; label: string };
+export async function createBooking(input: BookingInput, opts: { recurringPlanId?: string; customer?: Customer; payment?: SavedPayment } = {}) {
   const area = await checkZip(input.zip);
   if (!area.available) throw new UserError("zip", "We don't serve this ZIP code yet.");
 
@@ -118,8 +120,10 @@ export async function createBooking(input: BookingInput, opts: { recurringPlanId
     date: input.date, time_window: input.time_window, preferred_detailer_id: preferred,
     instructions: input.instructions ?? "", status: "requested", detailer_id: null,
     recurring_plan_id: planId, commission_rate: null, final_price: null,
-    payment_status: "unpaid", refund_amount: 0, payment_intent: null, checkout_url: null,
+    payment_status: opts.payment ? "card_on_file" : "unpaid", refund_amount: 0, payment_intent: null, checkout_url: null,
     promo_code: promoStatus === "applied" ? code : null, discount_pct: promoStatus === "applied" ? promo.pct : 0,
+    stripe_customer_id: opts.payment?.customer ?? null, payment_method_id: opts.payment?.paymentMethod ?? null,
+    card_label: opts.payment?.label ?? null, payment_error: null,
     cancel_reason: "", customer_rating: null, customer_feedback: "",
     created_at: now(), completed_at: null,
   };
@@ -132,6 +136,7 @@ export async function createBooking(input: BookingInput, opts: { recurringPlanId
     `This is a request, not a confirmed appointment yet. Our team will review it and confirm by email shortly.`,
     booking.price_estimate != null ? `Starting price: ${money(booking.price_estimate)} — the final price may vary with vehicle size and condition. You won't be charged until your service is confirmed.` : "We'll follow up with a custom quote before anything is scheduled.",
     ...(booking.promo_code ? [`Your ${booking.promo_code} offer is applied: ${booking.discount_pct}% off your final price.`] : []),
+    ...(booking.card_label ? [`Payment: ${booking.card_label} is saved securely with Stripe. It's only charged after your service is complete.`] : []),
     POLICIES.cancellation,
   ], { label: "View your bookings", url: accountUrl });
   if (process.env.ADMIN_NOTIFY_EMAIL) {
@@ -163,6 +168,7 @@ export async function completeBooking(b: Booking) {
   const paid = amountDue({ ...b, final_price: price }) ?? 0; // after any promotion
   const rate = b.commission_rate ?? (await commissionFor(b.detailer_id));
   await db.update("bookings", { id: b.id }, { status: "completed", completed_at: now(), final_price: price, commission_rate: rate });
+  if (b.payment_method_id && b.payment_status !== "paid") await chargeBookingCard({ ...b, final_price: price, commission_rate: rate });
   const c = await one("customers", { id: b.customer_id });
   if (c) {
     const per = await getSetting("loyalty_points_per_dollar", LOYALTY.pointsPerDollar);
@@ -172,6 +178,37 @@ export async function completeBooking(b: Booking) {
       `You earned ${Math.round(paid * per)} loyalty points. Rate your detailer and rebook in one tap from your account.`,
       POLICIES.guarantee,
     ], { label: "Rate & rebook", url: siteUrl(`/account/enter?token=${c.access_token}`) });
+  }
+}
+
+/**
+ * Charge the card / Apple Pay saved at booking for what the customer owes.
+ * The detailer's share goes straight to their Stripe account when connected;
+ * BluePalm keeps the commission. Failures are recorded for staff to follow up.
+ */
+export async function chargeBookingCard(b: Booking): Promise<{ ok: boolean; error?: string }> {
+  if (!b.payment_method_id || !b.stripe_customer_id || !stripeEnabled()) return { ok: false, error: "No saved card" };
+  const due = amountDue(b);
+  if (due == null || due <= 0) return { ok: false, error: "No amount to charge yet" };
+  const rate = b.commission_rate ?? (await commissionFor(b.detailer_id));
+  const d = b.detailer_id ? await one("detailers", { id: b.detailer_id }) : null;
+  try {
+    const pi = await chargeSavedCard({
+      bookingId: b.id, ref: b.ref, amountCents: Math.round(due * 100), commissionCents: Math.round(due * rate * 100),
+      customer: b.stripe_customer_id, paymentMethod: b.payment_method_id, destination: d?.stripe_account_id ?? null,
+      description: `BluePalm ${b.package_name} (${b.ref})`,
+    });
+    const paid = pi.status === "succeeded";
+    await db.update("bookings", { id: b.id }, { payment_intent: pi.id, payment_status: paid ? "paid" : "payment_failed", payment_error: paid ? null : `Payment ${pi.status}` });
+    return { ok: paid, error: paid ? undefined : `Payment ${pi.status}` };
+  } catch (e) {
+    const msg = String((e as Error).message ?? e).replace(/^Stripe: /, "").slice(0, 300);
+    await db.update("bookings", { id: b.id }, { payment_status: "payment_failed", payment_error: msg });
+    if (process.env.ADMIN_NOTIFY_EMAIL) {
+      await sendEmail(process.env.ADMIN_NOTIFY_EMAIL, `Card charge failed for ${b.ref}`, [`${msg}`, "Open the booking to retry the card or send the customer a payment link."],
+        { label: "Open booking", url: siteUrl(`/admin/bookings/${b.id}`) });
+    }
+    return { ok: false, error: msg };
   }
 }
 
@@ -187,3 +224,7 @@ export async function addMessage(bookingId: string, sender: "customer" | "detail
   if (!body) return;
   await db.insert("messages", { id: newId(), booking_id: bookingId, sender, body, created_at: now() });
 }
+
+/** The card saved on an earlier booking, so rebookings and recurring visits reuse it. */
+export const savedPaymentOf = (b?: Pick<Booking, "payment_method_id" | "stripe_customer_id" | "card_label"> | null): SavedPayment | undefined =>
+  b?.payment_method_id && b.stripe_customer_id ? { customer: b.stripe_customer_id, paymentMethod: b.payment_method_id, label: b.card_label ?? "Saved card" } : undefined;

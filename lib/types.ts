@@ -5,7 +5,7 @@ export type BookingStatus =
   | "completed"
   | "cancelled";
 
-export type PaymentStatus = "unpaid" | "payment_link_sent" | "paid" | "refunded" | "partially_refunded";
+export type PaymentStatus = "unpaid" | "card_on_file" | "payment_link_sent" | "paid" | "payment_failed" | "refunded" | "partially_refunded";
 
 export type Package = {
   id: string; name: string; tagline: string; base_price: number; features: string[];
@@ -36,6 +36,7 @@ export type Booking = {
   recurring_plan_id: string | null; commission_rate: number | null;
   final_price: number | null; payment_status: PaymentStatus; refund_amount: number;
   promo_code: string | null; discount_pct: number;
+  stripe_customer_id: string | null; payment_method_id: string | null; card_label: string | null; payment_error: string | null;
   payment_intent: string | null; checkout_url: string | null;
   cancel_reason: string; customer_rating: number | null; customer_feedback: string;
   created_at: string; completed_at: string | null;
