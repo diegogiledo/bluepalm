@@ -2,7 +2,13 @@
 import Link from "next/link";
 import { useRef } from "react";
 import { motion, useScroll, useTransform } from "framer-motion";
-import { ScrubCar } from "./scrub-car";
+import dynamic from "next/dynamic";
+
+// three.js is loaded only in the browser, after the headline has painted.
+const ScrubCar3D = dynamic(() => import("./scrub-car-3d").then((m) => m.ScrubCar3D), {
+  ssr: false,
+  loading: () => <div className="mx-auto aspect-[4/3] w-full max-w-5xl sm:aspect-[16/8]" />,
+});
 
 export function Icon({ name, className = "h-5 w-5" }: { name: string; className?: string }) {
   const p: Record<string, React.ReactNode> = {
@@ -76,7 +82,7 @@ export function Hero({ fromPrice }: { fromPrice: number | null }) {
 
       <motion.div initial={{ opacity: 0, y: 50, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 1, delay: 0.35, ease }} className="container-x mt-4">
-        <ScrubCar />
+        <ScrubCar3D />
       </motion.div>
     </section>
   );
