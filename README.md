@@ -10,7 +10,7 @@ cp .env.example .env.local   # set ADMIN_EMAIL, ADMIN_PASSWORD (10+ chars), SESS
 npm run dev                  # http://localhost:3000
 ```
 
-If Supabase isn't configured, the app stores data in `./data/dev-db.json` and uploads in `./data/uploads`. This mode is for development only. Emails and SMS are written to **Admin → Notifications** and are not delivered until Resend/Twilio keys are set.
+If Supabase isn't configured, the app stores data in `./data/dev-db.json` and uploads in `./data/uploads`. This mode is for development only. Emails are written to **Admin → Notifications** and are not delivered until a Resend key is set.
 
 To reset local data, stop the server and delete the `data/` folder. Packages, launch ZIP codes and settings are seeded again on the next request.
 
@@ -18,7 +18,7 @@ To reset local data, stop the server and delete the `data/` folder. Packages, la
 1. Create a Supabase project and run `supabase/schema.sql` in the SQL editor. It enables RLS with no public policies; all access is server-side through the service-role key.
 2. Create staff users in Supabase Auth, then `insert into staff (email, role) values (..., 'admin' | 'dispatcher')`.
 3. Set `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SESSION_SECRET`, `NEXT_PUBLIC_SITE_URL`.
-4. Add `RESEND_API_KEY` + `EMAIL_FROM` (verified domain), Twilio keys, and Stripe keys. Point a Stripe webhook at `/api/stripe/webhook` (events: `checkout.session.completed`, `account.updated`).
+4. Add `RESEND_API_KEY` + `EMAIL_FROM` (verified domain) and Stripe keys. Point a Stripe webhook at `/api/stripe/webhook` (events: `checkout.session.completed`, `account.updated`).
 
 ## Map of the app
 
@@ -48,12 +48,12 @@ Code layout: `lib/` holds the data layer (`db.ts`), auth (`auth.ts`, `portal.ts`
 
 **Code written but not yet tested against live services (needs API keys)**
 - Supabase backend (`lib/db.ts` Supabase store, Supabase Auth staff login, Storage bucket for documents).
-- Resend email and Twilio SMS delivery. SMS only goes to customers who opt in.
+- Resend email delivery (verified and working on bluepalm.shop).
 - Stripe Connect: Express onboarding for detailers, Checkout payment links with an application fee (commission) and a transfer to the detailer, refunds with transfer reversal, and a signed webhook.
 
 **Future work**
 - Interactive Google Maps/Mapbox map (the current map is a stylized SVG, labeled "not to scale").
-- Masked phone calls/SMS (e.g. Twilio Conversations/Proxy). In-platform messaging is in place today.
+- Masked phone calls between customers and detailers. In-platform messaging is in place today.
 - Customer password/OTP accounts (today: emailed magic links stored in an httpOnly cookie), reward redemption at checkout, automated recurring scheduling (cron), detailer availability calendars and real-time slots, an automated background-check integration, and multi-instance rate limiting (Redis).
 - Real automotive photography. No stock photos were bundled because of licensing; the hero uses an animated illustration.
 

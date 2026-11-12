@@ -21,7 +21,7 @@ create table if not exists staff (
 
 create table if not exists customers (
   id uuid primary key, email text not null unique, name text not null, phone text not null default '',
-  access_token text not null unique, loyalty_points integer not null default 0, sms_opt_in boolean not null default false, created_at timestamptz not null default now()
+  access_token text not null unique, loyalty_points integer not null default 0, created_at timestamptz not null default now()
 );
 
 create table if not exists detailers (

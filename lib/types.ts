@@ -15,7 +15,7 @@ export type ServiceZip = { zip: string; city: string; county: string; enabled: b
 export type Setting = { key: string; value: unknown };
 export type Customer = {
   id: string; email: string; name: string; phone: string; access_token: string;
-  loyalty_points: number; sms_opt_in: boolean; created_at: string;
+  loyalty_points: number; created_at: string;
 };
 export type DetailerStatus = "pending" | "approved" | "rejected" | "suspended";
 export type Detailer = {
@@ -49,7 +49,7 @@ export type Message = {
   id: string; booking_id: string; sender: "customer" | "detailer" | "admin"; body: string; created_at: string;
 };
 export type Outbox = {
-  id: string; channel: "email" | "sms"; to: string; subject: string; body: string;
+  id: string; channel: "email"; to: string; subject: string; body: string;
   status: "sent" | "logged" | "failed"; error: string; created_at: string;
 };
 export type StaffRole = "admin" | "dispatcher";

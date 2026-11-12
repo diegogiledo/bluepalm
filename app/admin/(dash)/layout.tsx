@@ -25,7 +25,6 @@ export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
   const integrations = [
     ["Database", isSupabase ? "Supabase" : "Local JSON (dev)"],
     ["Email", process.env.RESEND_API_KEY ? "Resend" : "Logged only"],
-    ["SMS", process.env.TWILIO_ACCOUNT_SID ? "Twilio" : "Logged only"],
     ["Payments", stripeEnabled() ? "Stripe" : "Not configured"],
   ];
   return (

@@ -9,7 +9,7 @@ type Pkg = { id: string; name: string; base_price: number; tagline: string; feat
 type Data = {
   zip: string; address: string; city: string; vehicle: string; vehicle_details: string; package_id: string;
   date: string; time_window: string; preferred_detailer_id: string; frequency: string;
-  name: string; email: string; phone: string; instructions: string; sms_opt_in: boolean; website: string;
+  name: string; email: string; phone: string; instructions: string; website: string;
 };
 const STEPS = ["Your car", "Service & time", "Your details"];
 const LAST = STEPS.length - 1;
@@ -26,7 +26,7 @@ export function BookingWizard({ packages, initialPackage, initialZip }: { packag
     zip: initialZip ?? "", address: "", city: "", vehicle: "", vehicle_details: "",
     package_id: initialPackage && (packages.some((p) => p.id === initialPackage) || initialPackage === "custom") ? initialPackage : "",
     date: "", time_window: "", preferred_detailer_id: "", frequency: "none",
-    name: "", email: "", phone: "", instructions: "", sms_opt_in: false, website: "",
+    name: "", email: "", phone: "", instructions: "", website: "",
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [zipInfo, setZipInfo] = useState<{ city: string; county: string } | null>(null);
@@ -122,7 +122,7 @@ export function BookingWizard({ packages, initialPackage, initialZip }: { packag
         <h2 className="mt-6 font-display text-3xl font-extrabold">Request received!</h2>
         <p className="mt-2 text-ink-muted">Reference <b className="text-navy">{done.ref}</b></p>
         <div className="mt-6 rounded-2xl bg-sky p-5 text-left text-sm leading-relaxed text-navy">
-          <p><b>What happens next:</b> this is a booking <b>request</b>. Our team will review it, match you with a local detailer and confirm your appointment by email{d.sms_opt_in ? " and text" : ""}. You won&apos;t be charged until your service is confirmed.</p>
+          <p><b>What happens next:</b> this is a booking <b>request</b>. Our team will review it, match you with a local detailer and confirm your appointment by email. You won&apos;t be charged until your service is confirmed.</p>
           <p className="mt-3 text-ink-muted">{POLICIES.cancellation}</p>
         </div>
         <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
@@ -236,10 +236,6 @@ export function BookingWizard({ packages, initialPackage, initialZip }: { packag
                   <Field label="Full name" error={errors.name}><input className="input" autoComplete="name" value={d.name} onChange={(e) => set("name", e.target.value)} /></Field>
                   <Field label="Email" error={errors.email}><input className="input" type="email" autoComplete="email" value={d.email} onChange={(e) => set("email", e.target.value)} /></Field>
                   <Field label="Phone number" error={errors.phone}><input className="input" type="tel" autoComplete="tel" value={d.phone} onChange={(e) => set("phone", e.target.value)} placeholder="(813) 555-0100" /></Field>
-                  <label className="flex items-start gap-3 self-end rounded-2xl bg-sky/60 p-3 text-sm">
-                    <input type="checkbox" className="mt-1 h-4 w-4 accent-brand" checked={d.sms_opt_in} onChange={(e) => set("sms_opt_in", e.target.checked)} />
-                    Text me booking updates. Msg & data rates may apply. Reply STOP to opt out.
-                  </label>
                   <Field label="Additional instructions (optional)" className="sm:col-span-2">
                     <textarea className="input min-h-28" maxLength={1000} value={d.instructions} onChange={(e) => set("instructions", e.target.value)} placeholder="Gate code, parking spot, pet hair, key hand-off…" />
                   </Field>

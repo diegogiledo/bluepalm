@@ -11,7 +11,7 @@ export const FAQS = [
   },
   {
     q: "How do I know my booking is confirmed?",
-    a: "Online bookings are submitted as requests. Our team reviews each one and sends a confirmation by email (and text, if you opt in) once your appointment is accepted. Your booking isn't final until you receive that confirmation.",
+    a: "Online bookings are submitted as requests. Our team reviews each one and sends a confirmation by email once your appointment is accepted. Your booking isn't final until you receive that confirmation.",
   },
   {
     q: "How does pricing work?",

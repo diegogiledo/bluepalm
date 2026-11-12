@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { db, one } from "@/lib/db";
 import { getDetailer } from "@/lib/portal";
 import { commissionFor, completeBooking, publicDetailerName, todayFL, windowLabel } from "@/lib/services";
-import { sendEmail, sendSms, siteUrl } from "@/lib/notify";
+import { sendEmail, siteUrl } from "@/lib/notify";
 import { createAccountLink, createConnectAccount, stripeEnabled } from "@/lib/stripe";
 
 async function me() {
@@ -32,7 +32,6 @@ export async function acceptJob(form: FormData) {
       `${publicDetailerName(d)} will take care of your ${b.package_name} on ${b.date}, ${windowLabel(b.time_window)}.`,
       "Need to share anything? Message us from your account — BluePalm keeps your contact details private.",
     ], { label: "View booking", url: siteUrl(`/account/enter?token=${c.access_token}`) });
-    if (c.sms_opt_in) await sendSms(c.phone, `BluePalm: ${publicDetailerName(d)} is assigned to your ${b.date} detail (${b.ref}).`);
   }
   revalidatePath("/detailer");
 }

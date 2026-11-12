@@ -8,7 +8,7 @@ export default async function Outbox() {
   return (
     <div className="space-y-6">
       <div><h1 className="font-display text-3xl font-extrabold">Notifications</h1>
-        <p className="text-ink-muted">Every email and SMS the platform sends. &ldquo;Logged&rdquo; means the provider isn&apos;t configured yet, so the message was recorded but not delivered.</p></div>
+        <p className="text-ink-muted">Every email the platform sends. &ldquo;Logged&rdquo; means the provider isn&apos;t configured yet, so the message was recorded but not delivered.</p></div>
       <ul className="space-y-3">
         {rows.map((m) => (
           <li key={m.id} className="card p-5 text-sm">

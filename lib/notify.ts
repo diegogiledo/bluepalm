@@ -4,7 +4,7 @@ import { newId } from "./auth";
 import { BRAND } from "./config";
 
 /**
- * Email via Resend and SMS via Twilio (REST APIs, no SDKs).
+ * Email via Resend (REST API, no SDK).
  * Every message is recorded in the `outbox` table. Without API keys the
  * message is only logged (status "logged") — visible at /admin/outbox.
  */
@@ -23,7 +23,7 @@ function emailHtml(title: string, lines: string[], cta?: { label: string; url: s
   </div></body></html>`;
 }
 
-async function record(channel: "email" | "sms", to: string, subject: string, body: string, status: "sent" | "logged" | "failed", error = "") {
+async function record(channel: "email", to: string, subject: string, body: string, status: "sent" | "logged" | "failed", error = "") {
   await db.insert("outbox", { id: newId(), channel, to, subject, body, status, error, created_at: new Date().toISOString() });
 }
 
@@ -48,28 +48,6 @@ export async function sendEmail(to: string, title: string, lines: string[], cta?
   } catch (e) {
     await record("email", to, title, text, "failed", String(e));
   }
-}
-
-export async function sendSms(to: string, body: string) {
-  const sid = process.env.TWILIO_ACCOUNT_SID, token = process.env.TWILIO_AUTH_TOKEN, from = process.env.TWILIO_FROM_NUMBER;
-  if (!to) return;
-  if (!sid || !token || !from) return record("sms", to, "", body, "logged");
-  try {
-    const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
-      method: "POST",
-      headers: { Authorization: "Basic " + Buffer.from(`${sid}:${token}`).toString("base64"), "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ To: toE164(to), From: from, Body: body }),
-    });
-    if (!res.ok) throw new Error(`Twilio ${res.status}: ${await res.text()}`);
-    await record("sms", to, "", body, "sent");
-  } catch (e) {
-    await record("sms", to, "", body, "failed", String(e));
-  }
-}
-
-export function toE164(phone: string) {
-  const d = phone.replace(/\D/g, "");
-  return d.length === 10 ? `+1${d}` : d.length === 11 && d.startsWith("1") ? `+${d}` : `+${d}`;
 }
 
 export const siteUrl = (p: string) => `${BRAND.siteUrl.replace(/\/$/, "")}${p}`;

@@ -227,7 +227,7 @@ export async function generateRecurring(form: FormData) {
   await createBooking({
     zip: plan.zip, address: plan.address, city: plan.city, vehicle: plan.vehicle, vehicle_details: "",
     package_id: plan.package_id, date, time_window: plan.time_window, preferred_detailer_id: plan.preferred_detailer_id,
-    frequency: "none", name: c.name, email: c.email, phone: c.phone, instructions: "Recurring plan visit", sms_opt_in: false,
+    frequency: "none", name: c.name, email: c.email, phone: c.phone, instructions: "Recurring plan visit",
   }, { customer: c, recurringPlanId: plan.id });
   await db.update("recurring_plans", { id: plan.id }, { next_date: nextRecurringDate(date, plan.frequency) });
   revalidatePath("/admin/recurring");

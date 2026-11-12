@@ -2,7 +2,7 @@ import "server-only";
 import crypto from "crypto";
 import { db, one, getSetting } from "./db";
 import { newId, newToken } from "./auth";
-import { sendEmail, sendSms, siteUrl } from "./notify";
+import { sendEmail, siteUrl } from "./notify";
 import { TIME_WINDOWS, VEHICLES, POLICIES, LOYALTY } from "./config";
 import type { BookingInput } from "./validation";
 import type { Booking, Customer, Detailer, Package } from "./types";
@@ -50,15 +50,15 @@ function addDays(date: string, days: number) {
 }
 export const nextRecurringDate = (from: string, freq: "biweekly" | "monthly") => addDays(from, freq === "biweekly" ? 14 : 30);
 
-export async function upsertCustomer(input: { email: string; name: string; phone: string; sms_opt_in?: boolean }) {
+export async function upsertCustomer(input: { email: string; name: string; phone: string }) {
   const existing = await one("customers", { email: input.email });
   if (existing) {
-    await db.update("customers", { id: existing.id }, { phone: input.phone || existing.phone, sms_opt_in: Boolean(existing.sms_opt_in || input.sms_opt_in) });
+    await db.update("customers", { id: existing.id }, { phone: input.phone || existing.phone });
     return { customer: existing, isNew: false };
   }
   const c: Customer = {
     id: newId(), email: input.email, name: input.name, phone: input.phone,
-    access_token: newToken(), loyalty_points: 0, sms_opt_in: Boolean(input.sms_opt_in), created_at: now(),
+    access_token: newToken(), loyalty_points: 0, created_at: now(),
   };
   await db.insert("customers", c);
   return { customer: c, isNew: true };
@@ -85,7 +85,7 @@ export async function createBooking(input: BookingInput, opts: { recurringPlanId
 
   const { customer, isNew } = opts.customer
     ? { customer: opts.customer, isNew: false }
-    : await upsertCustomer({ email: input.email, name: input.name, phone: input.phone, sms_opt_in: input.sms_opt_in });
+    : await upsertCustomer({ email: input.email, name: input.name, phone: input.phone });
 
   let planId = opts.recurringPlanId ?? null;
   if (!planId && (input.frequency === "biweekly" || input.frequency === "monthly")) {
@@ -117,7 +117,7 @@ export async function createBooking(input: BookingInput, opts: { recurringPlanId
   await sendEmail(customer.email, `We received your booking request ${booking.ref}`, [
     `Hi ${customer.name.split(" ")[0]}, thanks for choosing BluePalm.`,
     `${booking.package_name} for your ${vehicleLabel(booking.vehicle).toLowerCase()} on ${booking.date}, ${windowLabel(booking.time_window)}, in ${booking.city}.`,
-    `This is a request, not a confirmed appointment yet. Our team will review it and confirm by email${input.sms_opt_in ? " and text" : ""} shortly.`,
+    `This is a request, not a confirmed appointment yet. Our team will review it and confirm by email shortly.`,
     booking.price_estimate != null ? `Starting price: ${money(booking.price_estimate)} — the final price may vary with vehicle size and condition. You won't be charged until your service is confirmed.` : "We'll follow up with a custom quote before anything is scheduled.",
     POLICIES.cancellation,
   ], { label: "View your bookings", url: accountUrl });
@@ -143,7 +143,6 @@ export async function notifyConfirmed(b: Booking) {
     `We'll let you know when a detailer is assigned. You can message us any time from your account page — please keep all communication through BluePalm.`,
     POLICIES.cancellation,
   ], { label: "Manage booking", url });
-  if (c.sms_opt_in) await sendSms(c.phone, `BluePalm: your ${b.package_name} on ${b.date} is confirmed (${b.ref}). Manage it: ${url}`);
 }
 
 export async function completeBooking(b: Booking) {

@@ -77,7 +77,7 @@ export async function rebook(_: unknown, form: FormData) {
     const { booking } = await createBooking({
       zip: b.zip, address: b.address, city: b.city, vehicle: b.vehicle, vehicle_details: b.vehicle_details,
       package_id: b.package_id, date, time_window, preferred_detailer_id: b.detailer_id ?? b.preferred_detailer_id,
-      frequency: "none", name: c.name, email: c.email, phone: c.phone, instructions: b.instructions, sms_opt_in: false,
+      frequency: "none", name: c.name, email: c.email, phone: c.phone, instructions: b.instructions,
     }, { customer: c });
     revalidatePath("/account");
     return { ok: `Request ${booking.ref} submitted — we'll confirm shortly.` };
