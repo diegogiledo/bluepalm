@@ -11,7 +11,8 @@ type Data = {
   date: string; time_window: string; preferred_detailer_id: string; frequency: string;
   name: string; email: string; phone: string; instructions: string; sms_opt_in: boolean; website: string;
 };
-const STEPS = ["Location", "Vehicle", "Service", "Appointment", "Your details", "Review"];
+const STEPS = ["Your car", "Service & time", "Your details"];
+const LAST = STEPS.length - 1;
 
 function isoDay(offset: number) {
   const d = new Date(); d.setDate(d.getDate() + offset);
@@ -38,7 +39,7 @@ export function BookingWizard({ packages, initialPackage, initialZip }: { packag
   const pkg = packages.find((p) => p.id === d.package_id);
 
   useEffect(() => {
-    if (step !== 3 || !/^\d{5}$/.test(d.zip)) return;
+    if (step !== 1 || !/^\d{5}$/.test(d.zip)) return;
     fetch(`/api/detailers-for-zip?zip=${d.zip}`).then((r) => r.json()).then((j) => setDetailers(j.detailers ?? [])).catch(() => setDetailers([]));
   }, [step, d.zip]);
 
@@ -47,25 +48,26 @@ export function BookingWizard({ packages, initialPackage, initialZip }: { packag
     if (s === 0) {
       if (!/^\d{5}$/.test(d.zip)) e.zip = "Enter a 5-digit ZIP code";
       if (d.address.trim().length < 4) e.address = "Enter your street address";
-      if (d.city.trim().length < 2) e.city = "Enter your city";
+      let city = d.city.trim();
       if (!e.zip) {
         setBusy(true);
         try {
           const j = await (await fetch(`/api/zip-check?zip=${d.zip}`)).json();
           if (!j.available) e.zip = "Sorry — we don't serve this ZIP code yet.";
-          else { setZipInfo({ city: j.city, county: j.county }); if (!d.city) set("city", j.city); }
+          else { setZipInfo({ city: j.city, county: j.county }); if (!city) { city = j.city; set("city", j.city); } }
         } catch { e.zip = "Couldn't verify your ZIP code. Please try again."; }
         setBusy(false);
       }
+      if (city.length < 2) e.city = "Enter your city";
+      if (!d.vehicle) e.vehicle = "Choose your vehicle type";
     }
-    if (s === 1 && !d.vehicle) e.vehicle = "Choose your vehicle type";
-    if (s === 2 && !d.package_id) e.package_id = "Choose a service";
-    if (s === 3) {
+    if (s === 1) {
+      if (!d.package_id) e.package_id = "Choose a service";
       if (!d.date) e.date = "Choose a preferred date";
       else if (d.date < isoDay(1)) e.date = "Please choose a date from tomorrow onward";
       if (!d.time_window) e.time_window = "Choose a time window";
     }
-    if (s === 4) {
+    if (s === 2) {
       if (d.name.trim().length < 2) e.name = "Enter your full name";
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email.trim())) e.email = "Enter a valid email";
       if (d.phone.replace(/\D/g, "").replace(/^1/, "").length !== 10) e.phone = "Enter a valid US phone number";
@@ -76,11 +78,12 @@ export function BookingWizard({ packages, initialPackage, initialZip }: { packag
 
   const topRef = useRef<HTMLDivElement>(null);
   const toTop = () => { const el = topRef.current; if (el && el.getBoundingClientRect().top < 0) el.scrollIntoView({ behavior: "smooth", block: "start" }); };
-  async function next() { if (await validate(step)) { setDir(1); setStep((s) => Math.min(s + 1, 5)); toTop(); } }
+  async function next() { if (await validate(step)) { setDir(1); setStep((s) => Math.min(s + 1, LAST)); toTop(); } }
   function back() { setDir(-1); setStep((s) => Math.max(s - 1, 0)); toTop(); }
   function goto(s: number) { setDir(s > step ? 1 : -1); setStep(s); toTop(); }
 
   async function submit() {
+    if (!(await validate(LAST))) return;
     setBusy(true); setFormError("");
     try {
       const r = await fetch("/api/bookings", {
@@ -92,7 +95,7 @@ export function BookingWizard({ packages, initialPackage, initialZip }: { packag
         setFormError(j.error ?? "Something went wrong.");
         if (j.fields) {
           setErrors(j.fields);
-          const map: Record<string, number> = { zip: 0, address: 0, city: 0, vehicle: 1, package_id: 2, date: 3, time_window: 3, name: 4, email: 4, phone: 4 };
+          const map: Record<string, number> = { zip: 0, address: 0, city: 0, vehicle: 0, package_id: 1, date: 1, time_window: 1, name: 2, email: 2, phone: 2 };
           const first = Object.keys(j.fields).map((k) => map[k]).filter((n) => n !== undefined).sort()[0];
           if (first !== undefined) goto(first);
         }
@@ -105,13 +108,9 @@ export function BookingWizard({ packages, initialPackage, initialZip }: { packag
   }
 
   const summary = useMemo(() => [
-    ["Location", `${d.address}, ${d.city} ${d.zip}`, 0],
-    ["Vehicle", `${VEHICLES.find((v) => v.id === d.vehicle)?.label ?? ""}${d.vehicle_details ? ` — ${d.vehicle_details}` : ""}`, 1],
-    ["Service", pkg ? `${pkg.name} · starting at $${pkg.base_price}` : d.package_id === "custom" ? "Custom quote" : "", 2],
-    ["Appointment", `${d.date ? new Date(d.date + "T12:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }) : ""} · ${TIME_WINDOWS.find((t) => t.id === d.time_window)?.label ?? ""}`, 3],
-    ["Frequency", FREQUENCIES.find((f) => f.id === d.frequency)?.label ?? "", 3],
-    ["Preferred detailer", detailers.find((x) => x.id === d.preferred_detailer_id)?.label ?? "No preference", 3],
-    ["Contact", `${d.name} · ${d.email} · ${d.phone}`, 4],
+    ["Your car", `${VEHICLES.find((v) => v.id === d.vehicle)?.label ?? ""}${d.vehicle_details ? ` (${d.vehicle_details})` : ""} · ${d.address}, ${d.city} ${d.zip}`, 0],
+    ["Service", `${pkg ? `${pkg.name} · from $${pkg.base_price}` : d.package_id === "custom" ? "Custom quote" : ""}`, 1],
+    ["When", `${d.date ? new Date(d.date + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }) : ""} · ${TIME_WINDOWS.find((t) => t.id === d.time_window)?.label ?? ""} · ${FREQUENCIES.find((f) => f.id === d.frequency)?.label ?? ""}${detailers.find((x) => x.id === d.preferred_detailer_id) ? ` · ${detailers.find((x) => x.id === d.preferred_detailer_id)!.label}` : ""}`, 1],
   ] as [string, string, number][], [d, pkg, detailers]);
 
   if (done) {
@@ -159,7 +158,7 @@ export function BookingWizard({ packages, initialPackage, initialZip }: { packag
             initial={{ opacity: 0, x: dir * 48 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: dir * -48 }}
             transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}>
             {step === 0 && (
-              <Step title="Where should we come?" sub="Your home, office or wherever your car is parked.">
+              <Step title="Where's your car?" sub="Your home, office or wherever it's parked.">
                 <div className="grid gap-5 sm:grid-cols-3">
                   <Field label="ZIP code" error={errors.zip} className="sm:col-span-1">
                     <input className="input" inputMode="numeric" maxLength={5} autoComplete="postal-code" value={d.zip} onChange={(e) => { set("zip", e.target.value.replace(/\D/g, "")); setZipInfo(null); }} />
@@ -172,10 +171,7 @@ export function BookingWizard({ packages, initialPackage, initialZip }: { packag
                   </Field>
                 </div>
                 {zipInfo && <p className="mt-4 flex items-center gap-2 text-sm font-semibold text-palm"><Icon name="check" className="h-4 w-4" />We serve {zipInfo.city}, {zipInfo.county}</p>}
-              </Step>
-            )}
-            {step === 1 && (
-              <Step title="What are we cleaning?" sub="Vehicle size helps us estimate time and price.">
+                <p className="label mt-8">Vehicle type</p>
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                   {VEHICLES.map((v) => (
                     <Choice key={v.id} selected={d.vehicle === v.id} onClick={() => set("vehicle", v.id)} label={v.label} />
@@ -187,8 +183,8 @@ export function BookingWizard({ packages, initialPackage, initialZip }: { packag
                 </Field>
               </Step>
             )}
-            {step === 2 && (
-              <Step title="Choose your service" sub="Starting prices — your final price is confirmed before you pay.">
+            {step === 1 && (
+              <Step title="Service & time" sub="Starting prices: your final price is confirmed before you pay.">
                 <div className="grid gap-3">
                   {packages.map((p) => (
                     <button type="button" key={p.id} onClick={() => set("package_id", p.id)} aria-pressed={d.package_id === p.id}
@@ -203,11 +199,7 @@ export function BookingWizard({ packages, initialPackage, initialZip }: { packag
                   </button>
                 </div>
                 {errors.package_id && <p className="field-error">{errors.package_id}</p>}
-              </Step>
-            )}
-            {step === 3 && (
-              <Step title="When works for you?" sub="Choose a preferred date and time window. We'll confirm the exact time with you.">
-                <div className="grid gap-5 sm:grid-cols-2">
+                <div className="mt-8 grid gap-5 sm:grid-cols-2">
                   <Field label="Preferred date" error={errors.date}>
                     <input type="date" className="input" min={isoDay(1)} max={isoDay(120)} value={d.date} onChange={(e) => set("date", e.target.value)} />
                   </Field>
@@ -223,15 +215,23 @@ export function BookingWizard({ packages, initialPackage, initialZip }: { packag
                   {TIME_WINDOWS.map((t) => <Choice key={t.id} selected={d.time_window === t.id} onClick={() => set("time_window", t.id)} label={t.label} hint={t.hint} />)}
                 </div>
                 {errors.time_window && <p className="field-error">{errors.time_window}</p>}
-                <p className="mt-3 text-xs text-ink-muted">Time windows are preferences, not reserved slots — availability is confirmed by our team.</p>
+                <p className="mt-3 text-xs text-ink-muted">Time windows are preferences, not reserved slots. We&apos;ll confirm the exact time with you.</p>
                 <p className="label mt-6">How often?</p>
                 <div className="grid gap-3 sm:grid-cols-3">
                   {FREQUENCIES.map((f) => <Choice key={f.id} selected={d.frequency === f.id} onClick={() => set("frequency", f.id)} label={f.label} hint={f.hint} />)}
                 </div>
               </Step>
             )}
-            {step === 4 && (
-              <Step title="Your details" sub="We'll use these to confirm your booking. Your details are shared with your detailer only as needed for the job.">
+            {step === 2 && (
+              <Step title="Your details" sub="We'll use these to confirm your booking. Detailers only see what they need for the job.">
+                <dl className="mb-7 divide-y divide-navy/8 rounded-2xl bg-sky/40 ring-1 ring-navy/10">
+                  {summary.map(([k, v, s]) => (
+                    <div key={k} className="flex items-start justify-between gap-4 px-5 py-3">
+                      <div className="min-w-0"><dt className="text-xs font-bold uppercase tracking-wider text-ink-muted">{k}</dt><dd className="mt-0.5 text-sm font-medium">{v || "—"}</dd></div>
+                      <button type="button" onClick={() => goto(s)} className="shrink-0 text-sm font-semibold text-brand hover:underline">Edit</button>
+                    </div>
+                  ))}
+                </dl>
                 <div className="grid gap-5 sm:grid-cols-2">
                   <Field label="Full name" error={errors.name}><input className="input" autoComplete="name" value={d.name} onChange={(e) => set("name", e.target.value)} /></Field>
                   <Field label="Email" error={errors.email}><input className="input" type="email" autoComplete="email" value={d.email} onChange={(e) => set("email", e.target.value)} /></Field>
@@ -245,19 +245,7 @@ export function BookingWizard({ packages, initialPackage, initialZip }: { packag
                   </Field>
                   <input tabIndex={-1} autoComplete="off" className="hidden" aria-hidden value={d.website} onChange={(e) => set("website", e.target.value)} name="website" />
                 </div>
-              </Step>
-            )}
-            {step === 5 && (
-              <Step title="Review your request" sub="Check the details below, then submit your request for confirmation.">
-                <dl className="divide-y divide-navy/8 rounded-2xl ring-1 ring-navy/10">
-                  {summary.map(([k, v, s]) => (
-                    <div key={k} className="flex items-start justify-between gap-4 px-5 py-4">
-                      <div><dt className="text-xs font-bold uppercase tracking-wider text-ink-muted">{k}</dt><dd className="mt-1 font-medium">{v || "—"}</dd></div>
-                      <button type="button" onClick={() => goto(s)} className="text-sm font-semibold text-brand hover:underline">Edit</button>
-                    </div>
-                  ))}
-                </dl>
-                <p className="mt-5 rounded-2xl bg-sky p-4 text-sm text-navy">
+                <p className="mt-6 rounded-2xl bg-sky p-4 text-sm text-navy">
                   {pkg ? <>Starting price <b>${pkg.base_price}</b>. Final price may vary with vehicle size and condition and will be confirmed before payment.</> : <>We&apos;ll send a custom quote before anything is scheduled.</>}
                   {" "}Submitting sends a request — it is not yet a confirmed appointment.
                 </p>
@@ -269,7 +257,7 @@ export function BookingWizard({ packages, initialPackage, initialZip }: { packag
 
         <div className="mt-10 flex items-center justify-between gap-3">
           <button type="button" onClick={back} className={`btn-ghost ${step === 0 ? "invisible" : ""}`}>Back</button>
-          {step < 5
+          {step < LAST
             ? <button type="button" onClick={next} disabled={busy} className="btn-primary min-w-36">{busy ? "Checking…" : "Continue"}</button>
             : <button type="button" onClick={submit} disabled={busy} className="btn-green min-w-44">{busy ? "Submitting…" : "Submit booking request"}</button>}
         </div>
