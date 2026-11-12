@@ -94,7 +94,7 @@ export function AddressAutocomplete({ value, onChange, onPick, invalid }: {
               </li>
             ))}
             <li className="px-4 pb-1.5 pt-1 text-right text-[10px] text-ink-muted" aria-hidden>
-              {provider === "google" ? "powered by Google" : "Address data: U.S. Census Bureau"}
+              {provider === "google" ? "powered by Google" : "Address data: county records & U.S. Census Bureau"}
             </li>
           </motion.ul>
         )}

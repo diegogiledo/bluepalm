@@ -1,4 +1,5 @@
 import "server-only";
+import { nearestCountyAddress, nearestManateeStreet, normAddr, searchCounties } from "./county-addresses";
 
 /**
  * Address search and reverse geocoding for the booking form.
@@ -72,17 +73,25 @@ export async function suggest(q: string, session: string): Promise<Suggestion[]>
   }
   if (!searchable(q)) return [];
   const query = /\b(fl|florida)\b/i.test(q) ? q : `${q}, FL`;
-  const matches = (await census(query)).filter((m) => m.addressComponents.state === "FL");
-  // closest to Tampa Bay & Sarasota first
+  // official county records first (they include brand-new streets), Census as backup
+  const [county, censusMatches] = await Promise.all([
+    searchCounties(q).catch(() => []),
+    census(query).catch(() => [] as CensusMatch[]),
+  ]);
+  // only the Tampa Bay–Sarasota region (Pasco/Hillsborough down to Charlotte)
+  const matches = censusMatches.filter((m) => m.addressComponents.state === "FL"
+    && m.coordinates.y > 26.7 && m.coordinates.y < 28.45 && m.coordinates.x > -83.1 && m.coordinates.x < -81.75);
   matches.sort((a, b) => Math.hypot(a.coordinates.y - BIAS.lat, a.coordinates.x - BIAS.lon) - Math.hypot(b.coordinates.y - BIAS.lat, b.coordinates.x - BIAS.lon));
   const seen = new Set<string>();
-  return matches.flatMap((m) => {
-    const a = fromCensus(m);
+  const out: Suggestion[] = [];
+  for (const a of [...county.map((c) => ({ ...c, state: "FL" })), ...matches.map(fromCensus)]) {
+    const key = normAddr(a.line1);
+    if (seen.has(key)) continue;
+    seen.add(key);
     const label = `${a.line1}, ${a.city}, FL ${a.zip}`;
-    if (seen.has(label)) return [];
-    seen.add(label);
-    return [{ id: label, label, ...a }];
-  }).slice(0, 6);
+    out.push({ id: label, label, line1: a.line1, city: a.city, zip: a.zip, state: "FL" });
+  }
+  return out.slice(0, 6);
 }
 
 /** Full address for a Google place id (free suggestions already carry the fields). */
@@ -103,20 +112,28 @@ export async function reverse(lat: number, lon: number): Promise<Address | null>
     const j = (await res.json()) as { results?: { address_components: GComp[] }[] };
     return j.results?.[0] ? fromGoogle(j.results[0].address_components) : null;
   }
-  const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=jsonv2&addressdetails=1&zoom=18`, {
-    signal: AbortSignal.timeout(TIMEOUT), headers: { "User-Agent": UA, "Accept-Language": "en" },
-  });
-  if (!res.ok) return null;
-  const a = ((await res.json()) as { address?: Record<string, string> }).address;
-  if (!a || (a.state && a.state !== "Florida")) return null;
-  const line1 = [a.house_number, a.road].filter(Boolean).join(" ");
-  const out: Address = { line1, city: a.city ?? a.town ?? a.village ?? a.hamlet ?? a.suburb ?? "", zip: (a.postcode ?? "").slice(0, 5), state: "FL" };
-  // confirm with the Census data, which has the official ZIP
-  if (a.house_number && a.road) {
-    try {
-      const m = await census(`${line1}, ${out.city || ""}, FL`);
-      if (m[0]) return fromCensus(m[0]);
-    } catch {}
-  }
-  return line1 ? out : null;
+  // Ask the counties and OpenStreetMap at the same time, then prefer:
+  // county address point → OpenStreetMap house (ZIP confirmed by Census) →
+  // Manatee street (new streets) → OpenStreetMap street.
+  const osm = (async (): Promise<Address | null> => {
+    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=jsonv2&addressdetails=1&zoom=18`, {
+      signal: AbortSignal.timeout(TIMEOUT), headers: { "User-Agent": UA, "Accept-Language": "en" },
+    });
+    if (!res.ok) return null;
+    const a = ((await res.json()) as { address?: Record<string, string> }).address;
+    if (!a || (a.state && a.state !== "Florida")) return null;
+    const line1 = [a.house_number, a.road].filter(Boolean).join(" ");
+    const out: Address = { line1, city: a.city ?? a.town ?? a.village ?? a.hamlet ?? a.suburb ?? "", zip: (a.postcode ?? "").slice(0, 5), state: "FL" };
+    if (a.house_number && a.road) {
+      try { const m = await census(`${line1}, ${out.city || ""}, FL`); if (m[0]) return fromCensus(m[0]); } catch {}
+    }
+    return line1 ? out : null;
+  })().catch(() => null);
+  const [point, street, fromOsm] = await Promise.all([
+    nearestCountyAddress(lat, lon).catch(() => null), nearestManateeStreet(lat, lon), osm,
+  ]);
+  if (point) return { line1: point.line1, city: point.city, zip: point.zip, state: "FL" };
+  if (fromOsm && /^\d/.test(fromOsm.line1)) return fromOsm;
+  if (street) return { line1: street.line1, city: street.city, zip: street.zip, state: "FL" };
+  return fromOsm;
 }
