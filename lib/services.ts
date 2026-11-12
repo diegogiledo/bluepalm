@@ -3,7 +3,8 @@ import crypto from "crypto";
 import { db, one, getSetting } from "./db";
 import { newId, newToken } from "./auth";
 import { sendEmail, siteUrl } from "./notify";
-import { TIME_WINDOWS, VEHICLES, POLICIES, LOYALTY } from "./config";
+import { TIME_WINDOWS, VEHICLES, POLICIES, LOYALTY, PROMOS } from "./config";
+import { amountDue } from "./pricing";
 import type { BookingInput } from "./validation";
 import type { Booking, Customer, Detailer, Package } from "./types";
 
@@ -87,6 +88,16 @@ export async function createBooking(input: BookingInput, opts: { recurringPlanId
     ? { customer: opts.customer, isNew: false }
     : await upsertCustomer({ email: input.email, name: input.name, phone: input.phone });
 
+  // Promotions (e.g. WELCOME10). First-booking offers only apply when this
+  // customer has no earlier booking that wasn't cancelled.
+  const code = (input.promo ?? "").toUpperCase();
+  const promo = PROMOS[code];
+  let promoStatus: "none" | "applied" | "not_first_booking" | "invalid" = code ? "invalid" : "none";
+  if (promo && pkg) {
+    const earlier = isNew ? [] : (await db.select("bookings", { customer_id: customer.id })).filter((b) => b.status !== "cancelled");
+    promoStatus = promo.firstBookingOnly && earlier.length ? "not_first_booking" : "applied";
+  }
+
   let planId = opts.recurringPlanId ?? null;
   if (!planId && (input.frequency === "biweekly" || input.frequency === "monthly")) {
     planId = newId();
@@ -108,6 +119,7 @@ export async function createBooking(input: BookingInput, opts: { recurringPlanId
     instructions: input.instructions ?? "", status: "requested", detailer_id: null,
     recurring_plan_id: planId, commission_rate: null, final_price: null,
     payment_status: "unpaid", refund_amount: 0, payment_intent: null, checkout_url: null,
+    promo_code: promoStatus === "applied" ? code : null, discount_pct: promoStatus === "applied" ? promo.pct : 0,
     cancel_reason: "", customer_rating: null, customer_feedback: "",
     created_at: now(), completed_at: null,
   };
@@ -119,6 +131,7 @@ export async function createBooking(input: BookingInput, opts: { recurringPlanId
     `${booking.package_name} for your ${vehicleLabel(booking.vehicle).toLowerCase()} on ${booking.date}, ${windowLabel(booking.time_window)}, in ${booking.city}.`,
     `This is a request, not a confirmed appointment yet. Our team will review it and confirm by email shortly.`,
     booking.price_estimate != null ? `Starting price: ${money(booking.price_estimate)} — the final price may vary with vehicle size and condition. You won't be charged until your service is confirmed.` : "We'll follow up with a custom quote before anything is scheduled.",
+    ...(booking.promo_code ? [`Your ${booking.promo_code} offer is applied: ${booking.discount_pct}% off your final price.`] : []),
     POLICIES.cancellation,
   ], { label: "View your bookings", url: accountUrl });
   if (process.env.ADMIN_NOTIFY_EMAIL) {
@@ -126,7 +139,7 @@ export async function createBooking(input: BookingInput, opts: { recurringPlanId
       `${booking.package_name} · ${vehicleLabel(booking.vehicle)} · ${booking.city} ${booking.zip} · ${booking.date} ${booking.time_window}`,
     ], { label: "Open in admin", url: siteUrl(`/admin/bookings/${booking.id}`) });
   }
-  return { booking, isNewCustomer: isNew, accountToken: isNew ? customer.access_token : null };
+  return { booking, isNewCustomer: isNew, accountToken: isNew ? customer.access_token : null, promoStatus };
 }
 
 export class UserError extends Error {
@@ -147,15 +160,16 @@ export async function notifyConfirmed(b: Booking) {
 
 export async function completeBooking(b: Booking) {
   const price = b.final_price ?? b.price_estimate ?? 0;
+  const paid = amountDue({ ...b, final_price: price }) ?? 0; // after any promotion
   const rate = b.commission_rate ?? (await commissionFor(b.detailer_id));
   await db.update("bookings", { id: b.id }, { status: "completed", completed_at: now(), final_price: price, commission_rate: rate });
   const c = await one("customers", { id: b.customer_id });
   if (c) {
     const per = await getSetting("loyalty_points_per_dollar", LOYALTY.pointsPerDollar);
-    await db.update("customers", { id: c.id }, { loyalty_points: c.loyalty_points + Math.round(price * per) });
+    await db.update("customers", { id: c.id }, { loyalty_points: c.loyalty_points + Math.round(paid * per) });
     await sendEmail(c.email, `Your car is sparkling — ${b.ref} complete`, [
       `Thanks for choosing BluePalm, ${c.name.split(" ")[0]}! Your ${b.package_name} is complete.`,
-      `You earned ${Math.round(price * per)} loyalty points. Rate your detailer and rebook in one tap from your account.`,
+      `You earned ${Math.round(paid * per)} loyalty points. Rate your detailer and rebook in one tap from your account.`,
       POLICIES.guarantee,
     ], { label: "Rate & rebook", url: siteUrl(`/account/enter?token=${c.access_token}`) });
   }

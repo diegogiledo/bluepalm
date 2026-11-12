@@ -1,3 +1,4 @@
+import { amountDue } from "@/lib/pricing";
 import Link from "next/link";
 import { requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -41,7 +42,7 @@ export default async function Bookings({ searchParams }: PageProps<"/admin/booki
                 <td>{fmtDate(b.date)}<span className="block text-xs text-ink-muted capitalize">{b.time_window}</span></td>
                 <td>{b.city} {b.zip}</td>
                 <td>{b.detailer_id ? publicDetailerName(det[b.detailer_id]) : b.preferred_detailer_id ? <span className="text-xs text-ink-muted">Prefers {publicDetailerName(det[b.preferred_detailer_id])}</span> : "—"}</td>
-                <td>{money(b.final_price ?? b.price_estimate)}</td>
+                <td>{money(amountDue(b))}{b.promo_code && <span className="ml-1 rounded-full bg-palm/15 px-1.5 py-0.5 text-[10px] font-bold text-palm-600">{b.promo_code}</span>}</td>
                 <td><Badge status={b.payment_status} /></td>
                 <td><Badge status={b.status} /></td>
               </tr>

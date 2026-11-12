@@ -1,3 +1,4 @@
+import { amountDue } from "@/lib/pricing";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getDetailer } from "@/lib/portal";
@@ -30,7 +31,7 @@ export default async function DetailerPortal({ searchParams }: PageProps<"/detai
   const accepted = mine.filter((b) => b.status === "assigned").sort((a, b) => a.date.localeCompare(b.date));
   const completed = mine.filter((b) => b.status === "completed").sort((a, b) => b.date.localeCompare(a.date));
   const payout = (price: number | null, r: number | null) => (price ?? 0) * (1 - (r ?? rate));
-  const earnings = completed.reduce((s, b) => s + payout(b.final_price, b.commission_rate), 0);
+  const earnings = completed.reduce((s, b) => s + payout(amountDue(b), b.commission_rate), 0);
   const rated = completed.filter((b) => b.customer_rating != null);
   const avg = rated.length ? rated.reduce((s, b) => s + (b.customer_rating ?? 0), 0) / rated.length : null;
   // Data minimisation: detailers only see the customer's first name, never email or phone.
@@ -84,7 +85,7 @@ export default async function DetailerPortal({ searchParams }: PageProps<"/detai
                 <div className="flex justify-between gap-3"><b className="font-display text-lg">{b.package_name}</b>{b.preferred_detailer_id === d.id && <span className="rounded-full bg-palm/15 px-2 py-1 text-xs font-bold text-palm-600">Requested you</span>}</div>
                 <p className="mt-1 text-sm text-ink-muted">{fmtDate(b.date)} · {windowLabel(b.time_window)}</p>
                 <p className="text-sm text-ink-muted">{vehicleLabel(b.vehicle)} · {b.city} {b.zip}</p>
-                <p className="mt-2 text-sm">Est. payout <b>{money(Math.round(payout(b.final_price ?? b.price_estimate, null) * 100) / 100)}</b> <span className="text-ink-muted">(based on {money(b.final_price ?? b.price_estimate)} price)</span></p>
+                <p className="mt-2 text-sm">Est. payout <b>{money(Math.round(payout(amountDue(b), null) * 100) / 100)}</b> <span className="text-ink-muted">(based on {money(amountDue(b))} price)</span></p>
                 <form action={acceptJob} className="mt-4"><input type="hidden" name="id" value={b.id} />
                   {ready ? <Submit className="btn-green btn-sm" pending="Accepting…">Accept job</Submit>
                     : <button type="button" disabled className="btn-ghost btn-sm">Verification required</button>}</form>
@@ -138,8 +139,8 @@ export default async function DetailerPortal({ searchParams }: PageProps<"/detai
                 <thead className="text-xs uppercase tracking-wider text-ink-muted"><tr><th className="p-4">Date</th><th>Service</th><th>Area</th><th>Price</th><th>Your payout</th><th>Rating</th></tr></thead>
                 <tbody className="divide-y divide-navy/5">
                   {completed.map((b) => (
-                    <tr key={b.id}><td className="p-4">{fmtDate(b.date)}</td><td>{b.package_name}</td><td>{b.city}</td><td>{money(b.final_price)}</td>
-                      <td className="font-semibold">{money(Math.round(payout(b.final_price, b.commission_rate) * 100) / 100)}</td><td>{b.customer_rating ? `${b.customer_rating} ★` : "—"}</td></tr>
+                    <tr key={b.id}><td className="p-4">{fmtDate(b.date)}</td><td>{b.package_name}</td><td>{b.city}</td><td>{money(amountDue(b))}</td>
+                      <td className="font-semibold">{money(Math.round(payout(amountDue(b), b.commission_rate) * 100) / 100)}</td><td>{b.customer_rating ? `${b.customer_rating} ★` : "—"}</td></tr>
                   ))}
                 </tbody>
               </table>

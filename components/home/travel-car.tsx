@@ -1,7 +1,9 @@
 "use client";
-import { useEffect, useRef } from "react";
+import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
 import { useReducedMotion } from "framer-motion";
 import { BODY, WHEELS } from "./scrub-car";
+import { WELCOME_PROMO } from "@/lib/config";
 
 /**
  * The hero car "drives off" through the homepage.
@@ -29,6 +31,12 @@ export function TravelCar() {
   const flip = useRef<HTMLDivElement>(null);
   const wheels = useRef<(SVGGElement | null)[]>([]);
   const puffs = useRef<(HTMLSpanElement | null)[]>([]);
+  const groundEl = useRef<HTMLSpanElement>(null);
+  const offer = useRef<HTMLAnchorElement>(null);
+  const [touchLabel, setTouchLabel] = useState("Click for 10% off your first cleaning");
+  useEffect(() => {
+    if (window.matchMedia("(pointer: coarse)").matches) setTouchLabel("Tap for 10% off your first clean");
+  }, []);
 
   useEffect(() => {
     const el = root.current, fl = flip.current;
@@ -48,10 +56,14 @@ export function TravelCar() {
       const dt = Math.min(64, now - prev); prev = now;
       const vw = window.innerWidth, vh = window.innerHeight, small = vw < 640;
 
-      // where the car drives: near the bottom (above the mobile Book button)
+      // where the car drives. Measured from real on-screen elements (not
+      // innerHeight) so phone toolbars and the iPhone safe area can't push it
+      // behind anything: on phones the wheels ride on the floating Book button.
       const w = small ? 104 : clamp(vw * 0.13, 130, 190);
       const h = (w * VH) / VW;
-      const driveY = vh - (small ? 70 : 26) - h; // on phones the wheels ride on the floating Book button
+      const btn = small ? document.querySelector<HTMLElement>("[data-floating-book] a")?.getBoundingClientRect() : undefined;
+      const ground = btn && btn.height > 0 && btn.top < vh ? btn.top + 4 : (groundEl.current?.getBoundingClientRect().top ?? vh - 26);
+      const driveY = ground - h * 0.93;
       const minX = small ? 6 : 24, maxX = vw - w - minX, center = (vw - w) / 2;
 
       // 1) hero → driving: starts once the hero car begins to leave the top
@@ -103,6 +115,18 @@ export function TravelCar() {
       el.style.width = `${rect.w.toFixed(1)}px`;
       el.style.transform = `translate3d(${rect.x.toFixed(1)}px, ${(rect.y + bob).toFixed(1)}px, 0)`;
 
+      // "10% off" bubble rides above the car while it's out driving
+      const o = offer.current;
+      if (o) {
+        const show = p >= 0.98 && q < 0.35;
+        const ow = o.offsetWidth, oh = o.offsetHeight;
+        const ox = clamp(rect.x + rect.w / 2 - ow / 2, 8, vw - ow - 8);
+        o.style.transform = `translate3d(${ox.toFixed(1)}px, ${(rect.y + rect.w * 0.12 - oh + bob).toFixed(1)}px, 0)`;
+        o.style.opacity = show ? "1" : "0";
+        o.style.pointerEvents = show ? "auto" : "none";
+        o.tabIndex = show ? 0 : -1;
+      }
+
       // soap bubbles from the rear while driving
       if (moving && now - lastPuff > 110 && bubbles.length) {
         lastPuff = now;
@@ -126,11 +150,18 @@ export function TravelCar() {
 
   if (reduce) return null;
   return (
+    <>
+      <span ref={groundEl} aria-hidden="true" className="pointer-events-none fixed left-0 h-0 w-0" style={{ bottom: "calc(env(safe-area-inset-bottom) + 26px)" }} />
+      <Link ref={offer} href={`/book?promo=${WELCOME_PROMO}`} tabIndex={-1}
+        className="tc-offer fixed left-0 top-0 z-[42] flex items-center gap-1.5 whitespace-nowrap rounded-full bg-palm px-3 py-1.5 text-xs font-bold text-white shadow-lift ring-2 ring-white transition-opacity duration-300 hover:bg-palm-600 sm:px-4 sm:py-2 sm:text-sm"
+        style={{ opacity: 0, pointerEvents: "none" }}>
+        <span aria-hidden>🎁</span> {touchLabel}
+      </Link>
     <div aria-hidden="true">
       {Array.from({ length: 8 }, (_, i) => (
-        <span key={i} ref={(n) => { puffs.current[i] = n; }} className="pointer-events-none fixed left-0 top-0 z-30 rounded-full bg-white/90 ring-1 ring-[#9cc8f5]" style={{ opacity: 0 }} />
+        <span key={i} ref={(n) => { puffs.current[i] = n; }} className="pointer-events-none fixed left-0 top-0 z-[41] rounded-full bg-white/90 ring-1 ring-[#9cc8f5]" style={{ opacity: 0 }} />
       ))}
-      <div ref={root} className="tc-car pointer-events-none fixed left-0 top-0 z-30 will-change-transform" style={{ opacity: 0, width: 0 }}>
+      <div ref={root} className="tc-car pointer-events-none fixed left-0 top-0 z-[41] will-change-transform" style={{ opacity: 0, width: 0 }}>
         <div ref={flip} className="transition-transform duration-300 ease-out">
           <svg viewBox={`0 0 ${VW} ${VH}`} className="block h-auto w-full drop-shadow-[0_18px_18px_rgba(3,15,40,0.35)]">
             <defs>
@@ -168,5 +199,6 @@ export function TravelCar() {
         </div>
       </div>
     </div>
+    </>
   );
 }

@@ -1,3 +1,4 @@
+import { amountDue } from "@/lib/pricing";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -84,7 +85,7 @@ export default async function AccountPage() {
                     <p className="text-xs font-bold uppercase tracking-wider text-ink-muted">{b.ref}</p>
                     <h3 className="mt-1 font-display text-xl font-bold">{b.package_name}</h3>
                     <p className="text-sm text-ink-muted">{fmtDate(b.date)} · {windowLabel(b.time_window)} · {vehicleLabel(b.vehicle)} · {b.address}, {b.city}</p>
-                    <p className="mt-1 text-sm">Starting price {money(b.price_estimate)}{dName(b.detailer_id) ? ` · Detailer: ${dName(b.detailer_id)}` : ""}</p>
+                    <p className="mt-1 text-sm">Starting price {money(b.price_estimate)}{b.promo_code ? ` · ${b.discount_pct}% off with ${b.promo_code}` : ""}{dName(b.detailer_id) ? ` · Detailer: ${dName(b.detailer_id)}` : ""}</p>
                     {b.checkout_url && b.payment_status === "payment_link_sent" && <a href={b.checkout_url} className="btn-green btn-sm mt-3">Pay securely</a>}
                   </div>
                   <Badge status={b.status} />
@@ -120,7 +121,7 @@ export default async function AccountPage() {
               <li key={b.id} className="card flex flex-wrap items-start justify-between gap-4 p-5">
                 <div>
                   <p className="font-semibold">{b.package_name} · {fmtDate(b.date)} <Badge status={b.status} /></p>
-                  <p className="text-sm text-ink-muted">{b.ref} · {vehicleLabel(b.vehicle)} · {b.city}{b.final_price != null ? ` · ${money(b.final_price)}` : ""}{dName(b.detailer_id) ? ` · ${dName(b.detailer_id)}` : ""}</p>
+                  <p className="text-sm text-ink-muted">{b.ref} · {vehicleLabel(b.vehicle)} · {b.city}{b.final_price != null ? ` · ${money(amountDue(b))}` : ""}{dName(b.detailer_id) ? ` · ${dName(b.detailer_id)}` : ""}</p>
                   {b.status === "completed" && b.customer_rating == null && (
                     <form action={rateBooking} className="mt-3 flex flex-wrap items-center gap-2">
                       <input type="hidden" name="id" value={b.id} />

@@ -1,3 +1,4 @@
+import { amountDue } from "@/lib/pricing";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireStaff } from "@/lib/auth";
@@ -19,7 +20,7 @@ export default async function BookingDetail({ params }: PageProps<"/admin/bookin
   ]);
   const eligible = detailers.filter((d) => zip && d.counties.includes(zip.county));
   const rate = b.commission_rate ?? (await commissionFor(b.detailer_id));
-  const price = b.final_price ?? b.price_estimate;
+  const price = amountDue(b); // what the customer pays, after any promotion
   const isAdmin = staff.role === "admin";
   const Row = ({ k, v }: { k: string; v: React.ReactNode }) => <div className="flex justify-between gap-4 py-2"><dt className="text-ink-muted">{k}</dt><dd className="text-right font-medium">{v}</dd></div>;
 
@@ -42,6 +43,8 @@ export default async function BookingDetail({ params }: PageProps<"/admin/bookin
             <Row k="Instructions" v={b.instructions || "—"} />
             <Row k="Starting price" v={money(b.price_estimate)} />
             <Row k="Final price" v={money(b.final_price)} />
+            {b.promo_code && <Row k="Promotion" v={`${b.promo_code}: ${b.discount_pct}% off`} />}
+            <Row k="Customer pays" v={money(price)} />
             <Row k="Commission" v={`${(rate * 100).toFixed(0)}%${price != null ? ` = ${money(Math.round(price * rate * 100) / 100)} platform / ${money(Math.round(price * (1 - rate) * 100) / 100)} detailer` : ""}`} />
             {b.refund_amount > 0 && <Row k="Refunded" v={money(b.refund_amount)} />}
             {b.cancel_reason && <Row k="Cancellation" v={b.cancel_reason} />}

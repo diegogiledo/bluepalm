@@ -1,3 +1,4 @@
+import { amountDue } from "@/lib/pricing";
 import Link from "next/link";
 import { requireStaff } from "@/lib/auth";
 import { db, getSetting } from "@/lib/db";
@@ -11,8 +12,8 @@ export default async function Overview({ searchParams }: PageProps<"/admin">) {
   const defaultRate = await getSetting("commission_rate", 0.2);
   const today = todayFL();
   const completed = bookings.filter((b) => b.status === "completed");
-  const gross = completed.reduce((s, b) => s + (b.final_price ?? 0), 0);
-  const commission = completed.reduce((s, b) => s + (b.final_price ?? 0) * (b.commission_rate ?? defaultRate), 0);
+  const gross = completed.reduce((s, b) => s + (amountDue(b) ?? 0), 0);
+  const commission = completed.reduce((s, b) => s + (amountDue(b) ?? 0) * (b.commission_rate ?? defaultRate), 0);
   const refunds = bookings.reduce((s, b) => s + b.refund_amount, 0);
   const rated = completed.filter((b) => b.customer_rating != null);
   const avg = rated.length ? rated.reduce((s, b) => s + (b.customer_rating ?? 0), 0) / rated.length : null;
@@ -22,7 +23,7 @@ export default async function Overview({ searchParams }: PageProps<"/admin">) {
 
   // last 6 months revenue
   const months = Array.from({ length: 6 }, (_, i) => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - (5 - i)); return d.toISOString().slice(0, 7); });
-  const byMonth = months.map((m) => ({ m, v: completed.filter((b) => (b.completed_at ?? b.date).startsWith(m)).reduce((s, b) => s + (b.final_price ?? 0), 0) }));
+  const byMonth = months.map((m) => ({ m, v: completed.filter((b) => (b.completed_at ?? b.date).startsWith(m)).reduce((s, b) => s + (amountDue(b) ?? 0), 0) }));
   const max = Math.max(1, ...byMonth.map((x) => x.v));
 
   const tiles: [string, string, string?][] = [

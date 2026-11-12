@@ -190,3 +190,10 @@ export const LOYALTY = {
   rewardThreshold: 500,
   rewardValue: 25,
 };
+
+// Promotions. WELCOME10 is offered by the driving car on the homepage and
+// only applies to a customer's first booking (checked on the server).
+export const PROMOS: Record<string, { pct: number; label: string; firstBookingOnly: boolean }> = {
+  WELCOME10: { pct: 10, label: "10% off your first cleaning", firstBookingOnly: true },
+};
+export const WELCOME_PROMO = "WELCOME10";

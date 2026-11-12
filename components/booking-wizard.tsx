@@ -2,14 +2,14 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { VEHICLES, TIME_WINDOWS, FREQUENCIES, POLICIES } from "@/lib/config";
+import { VEHICLES, TIME_WINDOWS, FREQUENCIES, POLICIES, PROMOS } from "@/lib/config";
 import { Icon } from "./home/hero";
 
 type Pkg = { id: string; name: string; base_price: number; tagline: string; features: string[] };
 type Data = {
   zip: string; address: string; city: string; vehicle: string; vehicle_details: string; package_id: string;
   date: string; time_window: string; preferred_detailer_id: string; frequency: string;
-  name: string; email: string; phone: string; instructions: string; website: string;
+  name: string; email: string; phone: string; instructions: string; website: string; promo: string;
 };
 const STEPS = ["Your car", "Service & time", "Your details"];
 const LAST = STEPS.length - 1;
@@ -19,20 +19,21 @@ function isoDay(offset: number) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-export function BookingWizard({ packages, initialPackage, initialZip }: { packages: Pkg[]; initialPackage?: string; initialZip?: string }) {
+export function BookingWizard({ packages, initialPackage, initialZip, initialPromo }: { packages: Pkg[]; initialPackage?: string; initialZip?: string; initialPromo?: string }) {
+  const promo = initialPromo && PROMOS[initialPromo] ? { code: initialPromo, ...PROMOS[initialPromo] } : null;
   const [step, setStep] = useState(0);
   const [dir, setDir] = useState(1);
   const [d, setD] = useState<Data>({
     zip: initialZip ?? "", address: "", city: "", vehicle: "", vehicle_details: "",
     package_id: initialPackage && (packages.some((p) => p.id === initialPackage) || initialPackage === "custom") ? initialPackage : "",
     date: "", time_window: "", preferred_detailer_id: "", frequency: "none",
-    name: "", email: "", phone: "", instructions: "", website: "",
+    name: "", email: "", phone: "", instructions: "", website: "", promo: promo?.code ?? "",
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [zipInfo, setZipInfo] = useState<{ city: string; county: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [detailers, setDetailers] = useState<{ id: string; label: string }[]>([]);
-  const [done, setDone] = useState<{ ref: string; accountToken: string | null } | null>(null);
+  const [done, setDone] = useState<{ ref: string; accountToken: string | null; promoStatus?: string } | null>(null);
   const [formError, setFormError] = useState("");
 
   const set = <K extends keyof Data>(k: K, v: Data[K]) => { setD((x) => ({ ...x, [k]: v })); setErrors((e) => ({ ...e, [k]: "" })); };
@@ -100,7 +101,7 @@ export function BookingWizard({ packages, initialPackage, initialZip }: { packag
           if (first !== undefined) goto(first);
         }
       } else {
-        setDone({ ref: j.ref, accountToken: j.accountToken });
+        setDone({ ref: j.ref, accountToken: j.accountToken, promoStatus: j.promoStatus });
         window.scrollTo({ top: 0, behavior: "smooth" });
       }
     } catch { setFormError("Network error — please check your connection and try again."); }
@@ -109,7 +110,7 @@ export function BookingWizard({ packages, initialPackage, initialZip }: { packag
 
   const summary = useMemo(() => [
     ["Your car", `${VEHICLES.find((v) => v.id === d.vehicle)?.label ?? ""}${d.vehicle_details ? ` (${d.vehicle_details})` : ""} · ${d.address}, ${d.city} ${d.zip}`, 0],
-    ["Service", `${pkg ? `${pkg.name} · from $${pkg.base_price}` : d.package_id === "custom" ? "Custom quote" : ""}`, 1],
+    ["Service", `${pkg ? `${pkg.name} · from $${pkg.base_price}` : d.package_id === "custom" ? "Custom quote" : ""}${promo && pkg ? ` · ${promo.code}: ${promo.pct}% off` : ""}`, 1],
     ["When", `${d.date ? new Date(d.date + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }) : ""} · ${TIME_WINDOWS.find((t) => t.id === d.time_window)?.label ?? ""} · ${FREQUENCIES.find((f) => f.id === d.frequency)?.label ?? ""}${detailers.find((x) => x.id === d.preferred_detailer_id) ? ` · ${detailers.find((x) => x.id === d.preferred_detailer_id)!.label}` : ""}`, 1],
   ] as [string, string, number][], [d, pkg, detailers]);
 
@@ -121,6 +122,8 @@ export function BookingWizard({ packages, initialPackage, initialZip }: { packag
         </motion.span>
         <h2 className="mt-6 font-display text-3xl font-extrabold">Request received!</h2>
         <p className="mt-2 text-ink-muted">Reference <b className="text-navy">{done.ref}</b></p>
+        {done.promoStatus === "applied" && <p className="mt-3 inline-flex rounded-full bg-palm/15 px-3 py-1 text-sm font-bold text-palm-600">🎁 {promo?.label ?? "Your discount"} is applied</p>}
+        {done.promoStatus === "not_first_booking" && <p className="mt-3 text-sm text-ink-muted">The {promo?.code} offer is for first-time customers, so it wasn&apos;t applied to this booking.</p>}
         <div className="mt-6 rounded-2xl bg-sky p-5 text-left text-sm leading-relaxed text-navy">
           <p><b>What happens next:</b> this is a booking <b>request</b>. Our team will review it, match you with a local detailer and confirm your appointment by email. You won&apos;t be charged until your service is confirmed.</p>
           <p className="mt-3 text-ink-muted">{POLICIES.cancellation}</p>
@@ -137,6 +140,12 @@ export function BookingWizard({ packages, initialPackage, initialZip }: { packag
 
   return (
     <div ref={topRef} className="mx-auto max-w-3xl scroll-mt-24">
+      {promo && (
+        <motion.p initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
+          className="mb-6 rounded-2xl bg-palm/10 px-4 py-3 text-center text-sm font-semibold text-palm-600 ring-1 ring-palm/30">
+          🎁 {promo.label}: code <b>{promo.code}</b> applies if this is your first BluePalm booking.
+        </motion.p>
+      )}
       {/* progress */}
       <ol className="mb-8 flex items-center gap-2" aria-label="Booking progress">
         {STEPS.map((s, i) => (
@@ -190,7 +199,10 @@ export function BookingWizard({ packages, initialPackage, initialZip }: { packag
                     <button type="button" key={p.id} onClick={() => set("package_id", p.id)} aria-pressed={d.package_id === p.id}
                       className={`flex items-start justify-between gap-4 rounded-2xl p-5 text-left ring-1 transition ${d.package_id === p.id ? "bg-sky ring-2 ring-brand" : "ring-navy/10 hover:ring-brand/40"}`}>
                       <span><b className="font-display text-lg">{p.name}</b><span className="mt-1 block text-sm text-ink-muted">{p.features.join(" · ")}</span></span>
-                      <span className="shrink-0 text-right"><span className="block text-xs text-ink-muted">from</span><b className="font-display text-2xl">${p.base_price}</b></span>
+                      <span className="shrink-0 text-right"><span className="block text-xs text-ink-muted">from</span>
+                        {promo
+                          ? <><s className="mr-1 text-sm text-ink-muted">${p.base_price}</s><b className="font-display text-2xl text-palm-600">${Math.round(p.base_price * (100 - promo.pct)) / 100}</b></>
+                          : <b className="font-display text-2xl">${p.base_price}</b>}</span>
                     </button>
                   ))}
                   <button type="button" onClick={() => set("package_id", "custom")} aria-pressed={d.package_id === "custom"}
@@ -242,7 +254,7 @@ export function BookingWizard({ packages, initialPackage, initialZip }: { packag
                   <input tabIndex={-1} autoComplete="off" className="hidden" aria-hidden value={d.website} onChange={(e) => set("website", e.target.value)} name="website" />
                 </div>
                 <p className="mt-6 rounded-2xl bg-sky p-4 text-sm text-navy">
-                  {pkg ? <>Starting price <b>${pkg.base_price}</b>. Final price may vary with vehicle size and condition and will be confirmed before payment.</> : <>We&apos;ll send a custom quote before anything is scheduled.</>}
+                  {pkg ? <>Starting price <b>${pkg.base_price}</b>{promo ? <>, {promo.pct}% off with <b>{promo.code}</b> if this is your first booking</> : null}. Final price may vary with vehicle size and condition and will be confirmed before payment.</> : <>We&apos;ll send a custom quote before anything is scheduled.</>}
                   {" "}Submitting sends a request — it is not yet a confirmed appointment.
                 </p>
                 {formError && <p className="field-error mt-4" role="alert">{formError}</p>}

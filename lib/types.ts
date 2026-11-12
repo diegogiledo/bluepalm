@@ -35,6 +35,7 @@ export type Booking = {
   instructions: string; status: BookingStatus; detailer_id: string | null;
   recurring_plan_id: string | null; commission_rate: number | null;
   final_price: number | null; payment_status: PaymentStatus; refund_amount: number;
+  promo_code: string | null; discount_pct: number;
   payment_intent: string | null; checkout_url: string | null;
   cancel_reason: string; customer_rating: number | null; customer_feedback: string;
   created_at: string; completed_at: string | null;

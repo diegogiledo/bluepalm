@@ -8,6 +8,7 @@ import { addMessage, commissionFor, completeBooking, createBooking, nextRecurrin
 import { sendEmail, siteUrl } from "@/lib/notify";
 import { createBookingCheckout, refundPaymentIntent, stripeEnabled } from "@/lib/stripe";
 import type { BookingStatus } from "@/lib/types";
+import { amountDue } from "@/lib/pricing";
 
 const str = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
 const num = (f: FormData, k: string) => { const n = Number(str(f, k)); return Number.isFinite(n) ? n : NaN; };
@@ -85,7 +86,7 @@ export async function sendPaymentLink(form: FormData) {
   await requireStaff();
   const b = await bookingOr404(str(form, "id"));
   const c = await one("customers", { id: b.customer_id });
-  const price = b.final_price ?? b.price_estimate;
+  const price = amountDue(b); // after any promotion
   if (!c || price == null || !stripeEnabled()) return;
   const rate = b.commission_rate ?? (await commissionFor(b.detailer_id));
   const d = b.detailer_id ? await one("detailers", { id: b.detailer_id }) : null;
@@ -113,7 +114,7 @@ export async function cancelOrRefund(form: FormData) {
   const refund = num(form, "refund") || 0;
   if (refund > 0) {
     if (staff.role !== "admin") return; // refunds are admin-only
-    const paid = b.final_price ?? b.price_estimate ?? 0;
+    const paid = amountDue(b) ?? 0;
     const amt = Math.min(refund, paid - b.refund_amount);
     if (amt <= 0) return;
     if (b.payment_intent && stripeEnabled()) await refundPaymentIntent(b.payment_intent, Math.round(amt * 100));
@@ -227,7 +228,7 @@ export async function generateRecurring(form: FormData) {
   await createBooking({
     zip: plan.zip, address: plan.address, city: plan.city, vehicle: plan.vehicle, vehicle_details: "",
     package_id: plan.package_id, date, time_window: plan.time_window, preferred_detailer_id: plan.preferred_detailer_id,
-    frequency: "none", name: c.name, email: c.email, phone: c.phone, instructions: "Recurring plan visit",
+    frequency: "none", name: c.name, email: c.email, phone: c.phone, instructions: "Recurring plan visit", promo: "",
   }, { customer: c, recurringPlanId: plan.id });
   await db.update("recurring_plans", { id: plan.id }, { next_date: nextRecurringDate(date, plan.frequency) });
   revalidatePath("/admin/recurring");

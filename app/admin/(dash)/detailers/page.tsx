@@ -1,3 +1,4 @@
+import { amountDue } from "@/lib/pricing";
 import { requireStaff } from "@/lib/auth";
 import { db, getSetting } from "@/lib/db";
 import { money } from "@/lib/services";
@@ -23,7 +24,7 @@ export default async function Detailers() {
           const jobs = bookings.filter((b) => b.detailer_id === d.id && b.status === "completed");
           const rated = jobs.filter((b) => b.customer_rating != null);
           const avg = rated.length ? rated.reduce((s, b) => s + (b.customer_rating ?? 0), 0) / rated.length : null;
-          const earned = jobs.reduce((s, b) => s + (b.final_price ?? 0) * (1 - (b.commission_rate ?? defaultRate)), 0);
+          const earned = jobs.reduce((s, b) => s + (amountDue(b) ?? 0) * (1 - (b.commission_rate ?? defaultRate)), 0);
           return (
             <li key={d.id} className="card p-6">
               <div className="flex flex-wrap items-start justify-between gap-4">

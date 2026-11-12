@@ -1,3 +1,4 @@
+import { amountDue } from "@/lib/pricing";
 import Link from "next/link";
 import { requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -12,7 +13,7 @@ export default async function Customers({ searchParams }: PageProps<"/admin/cust
     .map((c) => {
       const bs = bookings.filter((b) => b.customer_id === c.id);
       const done = bs.filter((b) => b.status === "completed");
-      return { c, bs, done, ltv: done.reduce((s, b) => s + (b.final_price ?? 0), 0), plan: plans.find((p) => p.customer_id === c.id && p.status === "active"),
+      return { c, bs, done, ltv: done.reduce((s, b) => s + (amountDue(b) ?? 0), 0), plan: plans.find((p) => p.customer_id === c.id && p.status === "active"),
         last: bs.map((b) => b.date).sort().at(-1) };
     }).sort((a, b) => b.ltv - a.ltv || b.bs.length - a.bs.length);
   return (

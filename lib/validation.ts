@@ -20,6 +20,7 @@ export const bookingSchema = z.object({
   email: z.email("Enter a valid email").max(160).transform((s) => s.toLowerCase()),
   phone,
   instructions: text(1000).optional().default(""),
+  promo: z.string().trim().max(24).optional().default(""),
   website: z.string().max(0).optional(), // honeypot
 });
 export type BookingInput = z.infer<typeof bookingSchema>;
