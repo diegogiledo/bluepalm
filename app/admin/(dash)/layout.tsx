@@ -5,6 +5,8 @@ import { isSupabase } from "@/lib/db";
 import { stripeEnabled } from "@/lib/stripe";
 import { Logo } from "@/components/logo";
 import { logout } from "../actions";
+import { themeBootScript } from "@/lib/admin-theme";
+import { ThemeToggle } from "@/components/admin/theme-toggle";
 
 export const metadata: Metadata = { title: "Admin", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -29,8 +31,10 @@ export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
     ["Payments", stripeEnabled() ? "Stripe" : "Not configured"],
   ];
   return (
-    <div className="min-h-screen bg-[#f5f8fc] lg:grid lg:grid-cols-[250px_1fr]">
-      <aside className="bg-navy p-5 text-white lg:sticky lg:top-0 lg:h-screen lg:overflow-y-auto">
+    <div className="admin-root min-h-screen bg-[#f5f8fc] lg:grid lg:grid-cols-[250px_1fr]">
+      {/* picks light or dark before the page paints (no white flash at night) */}
+      <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
+      <aside className="admin-sidebar bg-navy p-5 text-white lg:sticky lg:top-0 lg:h-screen lg:overflow-y-auto">
         <Link href="/admin"><Logo light /></Link>
         <nav className="mt-8 flex gap-1 overflow-x-auto lg:flex-col" aria-label="Admin">
           {NAV.filter((n) => !n.admin || staff.role === "admin").map((n) => (
@@ -41,6 +45,7 @@ export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
           <p className="mb-2 font-bold uppercase tracking-wider text-white/80">Integrations</p>
           {integrations.map(([k, v]) => <p key={k} className="flex justify-between gap-2"><span>{k}</span><span className="text-white/85">{v}</span></p>)}
         </div>
+        <ThemeToggle />
         <div className="mt-6 text-xs text-white/60">
           <p className="truncate">{staff.email}</p><p className="capitalize">Role: {staff.role}</p>
           <form action={logout} className="mt-2"><button className="font-semibold text-white hover:underline">Sign out</button></form>

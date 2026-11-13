@@ -44,7 +44,7 @@ const jsonLd = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${manrope.variable} ${dmSans.variable} antialiased`}>
+    <html lang="en" suppressHydrationWarning className={`${manrope.variable} ${dmSans.variable} antialiased`}>
       <body className="min-h-screen">
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
         <MotionProvider>{children}</MotionProvider>

@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import "leaflet/dist/leaflet.css";
 import "leaflet.markercluster/dist/MarkerCluster.css";
+import { useAdminTheme } from "./theme-toggle";
 
 export type MapPartner = {
   id: string; name: string; city: string; lat: number; lon: number; radius_miles: number;
@@ -21,6 +22,9 @@ const BLUE = "#1264D6";
 const MI_LAT = 69.0;
 const ESRI = "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas";
 const RAMP = [[219, 234, 254], [147, 197, 253], [59, 130, 246], [29, 78, 216], [30, 58, 138]];
+// on the dark map, more coverage = brighter (dim navy → bright sky blue)
+const RAMP_DARK = [[23, 42, 74], [30, 64, 125], [37, 99, 235], [96, 165, 250], [191, 219, 254]];
+const LEGEND_DARK = "linear-gradient(90deg,#172a4a,#1e407d,#2563eb,#60a5fa,#bfdbfe)";
 const LEGEND = "linear-gradient(90deg,#dbeafe,#93c5fd,#3b82f6,#1d4ed8,#1e3a8a)";
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -29,8 +33,8 @@ const covers = (p: MapPartner, lat: number, lon: number) => {
   const dy = (lat - p.lat) * MI_LAT, dx = (lon - p.lon) * MI_LAT * Math.cos((lat * Math.PI) / 180);
   return dx * dx + dy * dy <= p.radius_miles * p.radius_miles;
 };
-const shade = (t: number) => {
-  const x = Math.max(0, Math.min(1, t)) * (RAMP.length - 1), i = Math.floor(x), f = x - i, a = RAMP[i], b = RAMP[Math.min(RAMP.length - 1, i + 1)];
+const shade = (t: number, ramp = RAMP) => {
+  const x = Math.max(0, Math.min(1, t)) * (ramp.length - 1), i = Math.floor(x), f = x - i, a = ramp[i], b = ramp[Math.min(ramp.length - 1, i + 1)];
   return `rgb(${a.map((v, k) => Math.round(v + (b[k] - v) * f)).join(",")})`;
 };
 
@@ -63,6 +67,7 @@ function card(p: MapPartner) {
 export function CoverageMap({ partners }: { partners: MapPartner[] }) {
   const box = useRef<HTMLDivElement>(null);
   const [max, setMax] = useState(0);
+  const dark = useAdminTheme() === "dark";
 
   useEffect(() => {
     let map: import("leaflet").Map | undefined;
@@ -73,14 +78,15 @@ export function CoverageMap({ partners }: { partners: MapPartner[] }) {
       await import("leaflet.markercluster");
       if (cancelled || !box.current || !partners.length) return;
       map = L.map(box.current, { scrollWheelZoom: false, zoomSnap: 0.25 }).setView([27.55, -82.5], 9);
-      L.tileLayer(`${ESRI}/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}`, {
+      const base = dark ? "World_Dark_Gray" : "World_Light_Gray";
+      L.tileLayer(`${ESRI}/${base}_Base/MapServer/tile/{z}/{y}/{x}`, {
         maxZoom: 16, attribution: "Tiles &copy; Esri &mdash; Esri, HERE, Garmin, &copy; OpenStreetMap contributors",
       }).addTo(map);
       // city and road names above the hexagons so they stay readable
       map.createPane("labels");
       map.getPane("labels")!.style.zIndex = "450";
       map.getPane("labels")!.style.pointerEvents = "none";
-      L.tileLayer(`${ESRI}/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}`, { maxZoom: 16, pane: "labels" }).addTo(map);
+      L.tileLayer(`${ESRI}/${base}_Reference/MapServer/tile/{z}/{y}/{x}`, { maxZoom: 16, pane: "labels" }).addTo(map);
 
       // ---- hexagon coverage grid ----
       const lats = partners.map((p) => p.lat), lons = partners.map((p) => p.lon);
@@ -99,7 +105,7 @@ export function CoverageMap({ partners }: { partners: MapPartner[] }) {
       for (const c of cells) {
         const pts: [number, number][] = [];
         for (let i = 0; i < 6; i++) { const a = (Math.PI / 3) * i + Math.PI / 6; pts.push([c.lat + r * Math.sin(a), c.lon + r * kx * Math.cos(a)]); }
-        L.polygon(pts, { stroke: true, color: "#fff", weight: 1, fillColor: shade(Math.sqrt(c.n / top)), fillOpacity: 0.72 })
+        L.polygon(pts, { stroke: true, color: dark ? "#0b111c" : "#fff", weight: 1, fillColor: shade(Math.sqrt(c.n / top), dark ? RAMP_DARK : RAMP), fillOpacity: dark ? 0.8 : 0.72 })
           .bindTooltip(`${c.n} detailer${c.n > 1 ? "s" : ""} travel here`, { sticky: true, direction: "top", className: "bp-hex" })
           .addTo(hexes);
       }
@@ -127,7 +133,7 @@ export function CoverageMap({ partners }: { partners: MapPartner[] }) {
         const marker = L.marker([p.lat, p.lon], { icon: L.divIcon({ className: "bp-pin", html: `<span>${logo}</span>`, iconSize: [36, 36], iconAnchor: [18, 18] }), riseOnHover: true, title: p.name });
         marker.on("mouseover", () => {
           ring?.remove();
-          ring = L.circle([p.lat, p.lon], { radius: p.radius_miles * 1609.34, color: "#0B2342", weight: 2, dashArray: "6 6", fillColor: "#0B2342", fillOpacity: 0.05, interactive: false }).addTo(map!);
+          ring = L.circle([p.lat, p.lon], { radius: p.radius_miles * 1609.34, color: dark ? "#e3e9f3" : "#0B2342", weight: 2, dashArray: "6 6", fillColor: dark ? "#e3e9f3" : "#0B2342", fillOpacity: 0.05, interactive: false }).addTo(map!);
           // open the card toward the side of the map with more room
           const below = map!.latLngToContainerPoint(marker.getLatLng()).y < map!.getSize().y / 2;
           marker.unbindTooltip().bindTooltip(card(p), { direction: below ? "bottom" : "top", offset: [0, below ? 18 : -18], opacity: 1, className: "bp-tip" }).openTooltip();
@@ -139,7 +145,7 @@ export function CoverageMap({ partners }: { partners: MapPartner[] }) {
       map.fitBounds(L.latLngBounds(partners.map((p) => [p.lat, p.lon] as [number, number])).pad(0.04));
     })();
     return () => { cancelled = true; map?.remove(); };
-  }, [partners]);
+  }, [partners, dark]);
 
   return (
     <div>
@@ -147,7 +153,7 @@ export function CoverageMap({ partners }: { partners: MapPartner[] }) {
       <div ref={box} className="relative z-0 h-[520px] w-full overflow-hidden rounded-2xl ring-1 ring-navy/10" aria-label="Map of detailer coverage areas" />
       <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-ink-muted">
         <span className="flex items-center gap-2">Detailers reaching an area
-          <span className="h-2.5 w-32 rounded-full" style={{ background: LEGEND }} /> 1 → {max || "many"}</span>
+          <span className="h-2.5 w-32 rounded-full" style={{ background: dark ? LEGEND_DARK : LEGEND }} /> 1 → {max || "many"}</span>
         <span className="flex items-center gap-2"><span className="grid size-5 place-items-center rounded-full bg-brand text-[10px] font-bold text-white">5</span> group of nearby businesses (zoom in to spread out)</span>
         <span className="flex items-center gap-2"><span className="inline-block size-4 rounded-full border-2 border-dashed border-navy" /> hover a logo to see how far it travels</span>
       </div>

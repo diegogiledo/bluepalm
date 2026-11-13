@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { useAdminTheme } from "./theme-toggle";
 import { deleteExpense } from "@/app/admin/actions";
 import { useMemo, useState } from "react";
 import {
@@ -9,12 +10,19 @@ import {
 /* ------------------------------------------------------------------------ */
 /* Shared look: validated categorical palette, fixed per metric (never by rank) */
 /* ------------------------------------------------------------------------ */
-export const C = {
-  gmv: "#2a78d6", net: "#eb6834", profit: "#1baf7a", ebitda: "#eda100", opex: "#e87ba4", payout: "#008300", refunds: "#6250d6", discounts: "#e34948",
-};
-const SLOTS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"];
-const OTHER = "#a3a39b";
-const GRID = "#e8ecf2", AXIS = "#64748b";
+// light and dark steps of the same eight hues (dark steps are tuned for the dark surface)
+const LIGHT_SLOTS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"];
+const DARK_SLOTS = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#9085e9", "#e66767"];
+const named = (sl: string[]) => ({ gmv: sl[0], net: sl[1], profit: sl[2], ebitda: sl[3], opex: sl[4], payout: sl[5], refunds: sl[6], discounts: sl[7] });
+export const C = named(LIGHT_SLOTS);
+let SLOTS = LIGHT_SLOTS, OTHER = "#a3a39b", GRID = "#e8ecf2", AXIS = "#64748b", SURFACE = "#ffffff", ZERO = "#94a3b8";
+/** Switch every chart colour to the light or dark set (called at the top of each chart render). */
+function applyPalette(dark: boolean) {
+  SLOTS = dark ? DARK_SLOTS : LIGHT_SLOTS;
+  Object.assign(C, named(SLOTS));
+  OTHER = dark ? "#6b7280" : "#a3a39b"; GRID = dark ? "#243146" : "#e8ecf2"; AXIS = dark ? "#9aa8bc" : "#64748b";
+  SURFACE = dark ? "#141d2c" : "#ffffff"; ZERO = dark ? "#4b5b75" : "#94a3b8";
+}
 const usd = (n: number, dp = 0) => (n < 0 ? "−" : "") + "$" + Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: dp, maximumFractionDigits: dp });
 const usdShort = (n: number) => Math.abs(n) >= 1000 ? `${n < 0 ? "−" : ""}$${(Math.abs(n) / 1000).toFixed(Math.abs(n) >= 10000 ? 0 : 1)}k` : usd(n);
 const pct = (n: number | null, dp = 1) => (n == null || !isFinite(n) ? "—" : `${(n * 100).toFixed(dp)}%`);
@@ -43,6 +51,7 @@ function ChartTip({ active, payload, label, fmt = usd }: { active?: boolean; pay
 /* Overview: revenue with gross profit beside it, last 6 months               */
 /* ------------------------------------------------------------------------ */
 export function RevenueProfitChart({ data }: { data: { month: string; revenue: number; profit: number }[] }) {
+  applyPalette(useAdminTheme() === "dark");
   return (
     <div className="h-64">
       <ResponsiveContainer width="100%" height="100%">
@@ -75,12 +84,12 @@ export type Expense = { id: string; month: string; category: string; amount: num
 type Agg = { month: string; gmv: number; refunds: number; netGmv: number; net: number; payout: number; fees: number; profit: number; opex: number; ebitda: number; discounts: number; jobs: number; aov: number; newCust: number; returning: number; takeRate: number | null; grossMargin: number | null; ebitdaMargin: number | null };
 
 const METRICS = {
-  gmv: { label: "Revenue (GMV)", color: C.gmv }, net: { label: "Net revenue", color: C.net }, profit: { label: "Gross profit", color: C.profit },
-  ebitda: { label: "EBITDA", color: C.ebitda }, opex: { label: "Operating expenses", color: C.opex }, payout: { label: "Detailer payouts", color: C.payout },
-  refunds: { label: "Refunds", color: C.refunds }, discounts: { label: "Discounts", color: C.discounts },
+  gmv: { label: "Revenue (GMV)", get color() { return C.gmv; } }, net: { label: "Net revenue", get color() { return C.net; } }, profit: { label: "Gross profit", get color() { return C.profit; } },
+  ebitda: { label: "EBITDA", get color() { return C.ebitda; } }, opex: { label: "Operating expenses", get color() { return C.opex; } }, payout: { label: "Detailer payouts", get color() { return C.payout; } },
+  refunds: { label: "Refunds", get color() { return C.refunds; } }, discounts: { label: "Discounts", get color() { return C.discounts; } },
 } as const;
 type MetricKey = keyof typeof METRICS;
-const RATIOS = { takeRate: { label: "Take rate", color: C.net }, grossMargin: { label: "Gross margin", color: C.profit }, ebitdaMargin: { label: "EBITDA margin", color: C.ebitda } } as const;
+const RATIOS = { takeRate: { label: "Take rate", get color() { return C.net; } }, grossMargin: { label: "Gross margin", get color() { return C.profit; } }, ebitdaMargin: { label: "EBITDA margin", get color() { return C.ebitda; } } } as const;
 type RatioKey = keyof typeof RATIOS;
 const DIMS = { service: "Service", county: "County", vehicle: "Vehicle size", city: "City", detailer: "Detailer", customerType: "New vs returning", promo: "Promotion" } as const;
 type DimKey = keyof typeof DIMS;
@@ -158,6 +167,7 @@ const Delta = ({ now, before, invert = false }: { now: number; before: number | 
 export function FinanceDashboard({ rows, expenses, cancelled, detailersActive, expenseForm }: {
   rows: FinRow[]; expenses: Expense[]; cancelled: { month: string }[]; detailersActive: Record<string, number>; expenseForm: React.ReactNode;
 }) {
+  applyPalette(useAdminTheme() === "dark");
   const [range, setRange] = useState<RangeKey>("6");
   const counties = useMemo(() => ["All", ...[...new Set(rows.map((r) => r.county))].sort()], [rows]);
   const services = useMemo(() => ["All", ...[...new Set(rows.map((r) => r.service))].sort()], [rows]);
@@ -263,7 +273,7 @@ export function FinanceDashboard({ rows, expenses, cancelled, detailersActive, e
                 <CartesianGrid vertical={false} stroke={GRID} />
                 <XAxis dataKey="month" tickFormatter={tick} {...axis} />
                 <YAxis tickFormatter={usdShort} {...axis} width={56} />
-                <ReferenceLine y={0} stroke="#94a3b8" />
+                <ReferenceLine y={0} stroke={ZERO} />
                 <Tooltip content={<ChartTip />} cursor={{ fill: "rgba(18,100,214,.06)" }} />
                 {trend.length > 1 && <Legend iconType="square" wrapperStyle={{ fontSize: 12 }} />}
                 {(Object.keys(METRICS) as MetricKey[]).filter((k) => trend.includes(k)).map((k) => (
@@ -275,11 +285,11 @@ export function FinanceDashboard({ rows, expenses, cancelled, detailersActive, e
                 <CartesianGrid vertical={false} stroke={GRID} />
                 <XAxis dataKey="month" tickFormatter={tick} {...axis} />
                 <YAxis tickFormatter={usdShort} {...axis} width={56} />
-                <ReferenceLine y={0} stroke="#94a3b8" />
+                <ReferenceLine y={0} stroke={ZERO} />
                 <Tooltip content={<ChartTip />} />
                 {trend.length > 1 && <Legend iconType="plainline" wrapperStyle={{ fontSize: 12 }} />}
                 {(Object.keys(METRICS) as MetricKey[]).filter((k) => trend.includes(k)).map((k) => (
-                  <Line isAnimationActive={false} key={k} type="linear" dataKey={k} name={METRICS[k].label} stroke={METRICS[k].color} strokeWidth={2} dot={{ r: 4, strokeWidth: 2, fill: "#fff" }} activeDot={{ r: 6 }} />
+                  <Line isAnimationActive={false} key={k} type="linear" dataKey={k} name={METRICS[k].label} stroke={METRICS[k].color} strokeWidth={2} dot={{ r: 4, strokeWidth: 2, fill: SURFACE }} activeDot={{ r: 6 }} />
                 ))}
               </LineChart>
             )}
@@ -297,7 +307,7 @@ export function FinanceDashboard({ rows, expenses, cancelled, detailersActive, e
                 <CartesianGrid vertical={false} stroke={GRID} />
                 <XAxis dataKey="month" tickFormatter={tick} {...axis} />
                 <YAxis tickFormatter={(v) => `${Math.round(v * 100)}%`} {...axis} width={48} />
-                <ReferenceLine y={0} stroke="#94a3b8" />
+                <ReferenceLine y={0} stroke={ZERO} />
                 <Tooltip content={<ChartTip fmt={(n) => pct(n)} />} cursor={{ fill: "rgba(18,100,214,.06)" }} />
                 <Bar isAnimationActive={false} dataKey="value" name={`${METRICS[growthMetric].label} growth`} radius={[4, 4, 4, 4]} maxBarSize={36}>
                   {growth.map((g) => <Cell key={g.month} fill={(g.value ?? 0) >= 0 ? C.gmv : C.net} />)}
@@ -316,11 +326,11 @@ export function FinanceDashboard({ rows, expenses, cancelled, detailersActive, e
                 <CartesianGrid vertical={false} stroke={GRID} />
                 <XAxis dataKey="month" tickFormatter={tick} {...axis} />
                 <YAxis tickFormatter={(v) => `${Math.round(v * 100)}%`} {...axis} width={48} />
-                <ReferenceLine y={0} stroke="#94a3b8" />
+                <ReferenceLine y={0} stroke={ZERO} />
                 <Tooltip content={<ChartTip fmt={(n) => pct(n)} />} />
                 {ratios.length > 1 && <Legend iconType="plainline" wrapperStyle={{ fontSize: 12 }} />}
                 {(Object.keys(RATIOS) as RatioKey[]).filter((k) => ratios.includes(k) && !(segmented && k === "ebitdaMargin")).map((k) => (
-                  <Line isAnimationActive={false} key={k} type="linear" dataKey={k} name={RATIOS[k].label} stroke={RATIOS[k].color} strokeWidth={2} dot={{ r: 4, strokeWidth: 2, fill: "#fff" }} connectNulls />
+                  <Line isAnimationActive={false} key={k} type="linear" dataKey={k} name={RATIOS[k].label} stroke={RATIOS[k].color} strokeWidth={2} dot={{ r: 4, strokeWidth: 2, fill: SURFACE }} connectNulls />
                 ))}
               </LineChart>
             </ResponsiveContainer>
@@ -338,7 +348,7 @@ export function FinanceDashboard({ rows, expenses, cancelled, detailersActive, e
               <div className="h-56">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    <Pie data={mix} dataKey="value" nameKey="name" innerRadius="58%" outerRadius="92%" paddingAngle={1} stroke="#fff" strokeWidth={2} isAnimationActive={false}>
+                    <Pie data={mix} dataKey="value" nameKey="name" innerRadius="58%" outerRadius="92%" paddingAngle={1} stroke={SURFACE} strokeWidth={2} isAnimationActive={false}>
                       {mix.map((m) => <Cell key={m.name} fill={m.color} />)}
                     </Pie>
                     <Tooltip content={<ChartTip fmt={fmtMix} />} />
@@ -364,7 +374,7 @@ export function FinanceDashboard({ rows, expenses, cancelled, detailersActive, e
               <BarChart data={topDetailers} layout="vertical" margin={{ top: 0, right: 16, left: 8, bottom: 0 }}>
                 <CartesianGrid horizontal={false} stroke={GRID} />
                 <XAxis type="number" tickFormatter={topMetric === "jobs" ? undefined : usdShort} {...axis} />
-                <YAxis type="category" dataKey="name" width={150} {...axis} tick={{ fill: "#0B2342", fontSize: 11 }} />
+                <YAxis type="category" dataKey="name" width={150} {...axis} tick={{ fill: AXIS === "#64748b" ? "#0B2342" : "#e3e9f3", fontSize: 11 }} />
                 <Tooltip content={<ChartTip fmt={(n) => (topMetric === "jobs" ? `${n} jobs` : usd(n))} />} cursor={{ fill: "rgba(18,100,214,.06)" }} />
                 <Bar isAnimationActive={false} dataKey="value" name={MIX_METRICS[topMetric]} fill={C.gmv} radius={[0, 4, 4, 0]} maxBarSize={18} />
               </BarChart>
@@ -381,8 +391,8 @@ export function FinanceDashboard({ rows, expenses, cancelled, detailersActive, e
                 <YAxis allowDecimals={false} {...axis} width={36} />
                 <Tooltip content={<ChartTip fmt={(n) => `${n} jobs`} />} cursor={{ fill: "rgba(18,100,214,.06)" }} />
                 <Legend iconType="square" wrapperStyle={{ fontSize: 12 }} />
-                <Bar isAnimationActive={false} dataKey="newCust" name="New customers" stackId="j" fill={C.gmv} maxBarSize={36} stroke="#fff" strokeWidth={1} />
-                <Bar isAnimationActive={false} dataKey="returning" name="Returning" stackId="j" fill={C.profit} radius={[4, 4, 0, 0]} maxBarSize={36} stroke="#fff" strokeWidth={1} />
+                <Bar isAnimationActive={false} dataKey="newCust" name="New customers" stackId="j" fill={C.gmv} maxBarSize={36} stroke={SURFACE} strokeWidth={1} />
+                <Bar isAnimationActive={false} dataKey="returning" name="Returning" stackId="j" fill={C.profit} radius={[4, 4, 0, 0]} maxBarSize={36} stroke={SURFACE} strokeWidth={1} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -396,7 +406,7 @@ export function FinanceDashboard({ rows, expenses, cancelled, detailersActive, e
                 <XAxis dataKey="month" tickFormatter={tick} {...axis} />
                 <YAxis tickFormatter={(v) => usd(v)} {...axis} width={48} domain={["auto", "auto"]} />
                 <Tooltip content={<ChartTip fmt={(n) => usd(n, 2)} />} />
-                <Line isAnimationActive={false} type="linear" dataKey="aov" name="Average ticket" stroke={C.gmv} strokeWidth={2} dot={{ r: 4, strokeWidth: 2, fill: "#fff" }} />
+                <Line isAnimationActive={false} type="linear" dataKey="aov" name="Average ticket" stroke={C.gmv} strokeWidth={2} dot={{ r: 4, strokeWidth: 2, fill: SURFACE }} />
               </LineChart>
             </ResponsiveContainer>
           </div>

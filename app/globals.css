@@ -58,3 +58,50 @@ section[id] { scroll-margin-top: 84px; }
 /* Homepage driving car: quick sparkle wash when it leaves the hero */
 .tc-car.tc-wash svg { animation: tc-wash 0.9s ease-out; }
 @keyframes tc-wash { 0% { filter: brightness(1.9) drop-shadow(0 0 22px #ffffff); } 100% { filter: brightness(1) drop-shadow(0 18px 18px rgba(3,15,40,0.35)); } }
+
+/* ------------------------------------------------------------------ */
+/* Admin dark theme (set on <html data-admin-theme="dark"> by the admin  */
+/* layout; Auto follows sunset). Unlayered, so it overrides utilities. */
+/* ------------------------------------------------------------------ */
+html[data-admin-theme="dark"] {
+  color-scheme: dark;
+  --color-white: #141d2c;      /* cards, inputs, menus */
+  --color-navy: #e3e9f3;       /* main text (and faint borders via navy/10) */
+  --color-sky: #1b2a43;        /* tinted panels and hovers */
+  --color-sky-200: #25406b;
+  --color-ink-muted: #9aa8bc;
+  --color-brand: #5b9cf5;
+  --color-brand-600: #4a8ae6;
+  --color-palm: #2bb884;
+  --color-palm-600: #23a072;
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.35), 0 10px 28px -10px rgb(0 0 0 / 0.6);
+  --shadow-lift: 0 2px 4px rgb(0 0 0 / 0.4), 0 22px 44px -16px rgb(0 0 0 / 0.7);
+}
+html[data-admin-theme="dark"] .admin-root { background: #0b111c; }
+/* white stays white on coloured buttons and the sidebar */
+html[data-admin-theme="dark"] :is(.admin-sidebar, .btn-primary, .btn-green, .bg-brand, .bg-palm, .bg-navy, .bg-red-600, .bg-red-700) { --color-white: #ffffff; }
+html[data-admin-theme="dark"] .admin-sidebar { --color-navy: #070d17; border-right: 1px solid rgb(255 255 255 / 0.06); }
+html[data-admin-theme="dark"] .admin-root main .bg-navy { --color-navy: #34496b; }
+/* status tints */
+html[data-admin-theme="dark"] .bg-amber-100 { background-color: rgb(180 120 0 / 0.22); }
+html[data-admin-theme="dark"] .bg-amber-50 { background-color: rgb(180 120 0 / 0.14); }
+html[data-admin-theme="dark"] :is(.text-amber-900, .text-amber-800, .text-amber-700) { color: #fcd34d; }
+html[data-admin-theme="dark"] .border-amber-400 { border-color: rgb(252 211 77 / 0.4); }
+html[data-admin-theme="dark"] .bg-red-100 { background-color: rgb(239 68 68 / 0.2); }
+html[data-admin-theme="dark"] .bg-red-50\/50 { background-color: rgb(239 68 68 / 0.08); }
+html[data-admin-theme="dark"] :is(.text-red-700, .text-red-600) { color: #fca5a5; }
+html[data-admin-theme="dark"] :is(.border-red-200, .border-red-300) { border-color: rgb(248 113 113 / 0.35); }
+html[data-admin-theme="dark"] .bg-indigo-100 { background-color: rgb(99 102 241 / 0.22); }
+html[data-admin-theme="dark"] .text-indigo-700 { color: #a5b4fc; }
+html[data-admin-theme="dark"] .bg-\[\#cfe6ff\] { background-color: var(--color-sky-200); }
+/* map controls and pop-ups */
+html[data-admin-theme="dark"] .leaflet-container { background: #0f1724; }
+html[data-admin-theme="dark"] .leaflet-bar a { background: #1b2638; color: #e3e9f3; border-color: #2a3850; }
+html[data-admin-theme="dark"] .leaflet-control-attribution { background: rgb(11 17 28 / 0.75) !important; color: #9aa8bc; }
+html[data-admin-theme="dark"] .leaflet-control-attribution a { color: #c7d2e3; }
+html[data-admin-theme="dark"] .leaflet-tooltip { background: #141d2c; color: #e3e9f3; }
+html[data-admin-theme="dark"] .leaflet-tooltip-top::before { border-top-color: #141d2c; }
+html[data-admin-theme="dark"] .leaflet-tooltip-bottom::before { border-bottom-color: #141d2c; }
+html[data-admin-theme="dark"] .bp-card { color: #e3e9f3; }
+html[data-admin-theme="dark"] .bp-card .bp-muted, html[data-admin-theme="dark"] .bp-muted { color: #9aa8bc; }
+html[data-admin-theme="dark"] .bp-stats { border-top-color: #2a3850; color: #9aa8bc; }
