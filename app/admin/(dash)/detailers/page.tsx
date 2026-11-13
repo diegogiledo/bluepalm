@@ -113,6 +113,7 @@ export default async function Detailers({ searchParams }: PageProps<"/admin/deta
   const mapData: MapPartner[] = inCounty.filter((m) => m.lat != null && m.lon != null && m.status !== "unsubscribed").map((m) => ({
     id: m.id, name: m.business_name, city: m.city, lat: m.lat!, lon: m.lon!, radius_miles: Number(m.radius_miles) || 15,
     logo_url: m.logo_url, sent: stats(m.id).sent, won: stats(m.id).won,
+    owner: m.owner_name, phone: m.phone, email: m.email, website: m.website, counties: m.counties,
   }));
   const totals = { sent: offers.length, responded: offers.filter((x) => x.responded_at && x.status !== "taken").length, won: offers.filter((x) => x.status === "accepted").length };
   const link = (p: Record<string, string>) => "/admin/detailers?" + new URLSearchParams({ ...(county ? { county } : {}), ...(status !== "all" ? { status } : {}), ...(q ? { q } : {}), ...p }).toString();
