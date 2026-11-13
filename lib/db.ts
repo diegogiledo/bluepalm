@@ -187,3 +187,16 @@ export async function setSetting(key: string, value: unknown) {
   if (existing) await db.update("settings", { key }, { value });
   else await db.insert("settings", { key, value });
 }
+
+/**
+ * How many outbox emails with one of these statuses were recorded since `sinceIso`.
+ * (A direct count, so it stays fast as the outbox grows.)
+ */
+export async function countOutboxSince(sinceIso: string, statuses: string[]): Promise<number> {
+  if (isSupabase) {
+    const r = await client().from("outbox").select("id", { count: "exact", head: true }).in("status", statuses).gte("created_at", sinceIso);
+    if (r.error) throw new Error(`Database error: ${r.error.message}`);
+    return r.count ?? 0;
+  }
+  return (await store.select("outbox")).filter((o) => statuses.includes(o.status) && o.created_at >= sinceIso).length;
+}

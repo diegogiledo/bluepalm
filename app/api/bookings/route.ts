@@ -3,6 +3,7 @@ import { bookingSchema, fieldErrors } from "@/lib/validation";
 import { createBooking, UserError, type SavedPayment } from "@/lib/services";
 import { attachPaymentMethod, cardLabel, findOrCreateCustomer, getSetupIntent, markSetupIntentUsed, stripeEnabled } from "@/lib/stripe";
 import { rateLimit } from "@/lib/rate-limit";
+import { bookingCapacity, LIMIT_MESSAGE } from "@/lib/email-budget";
 
 /** Cards are collected at booking whenever Stripe is configured (both keys present). */
 const cardsRequired = () => stripeEnabled() && Boolean(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY);
@@ -18,6 +19,12 @@ export async function POST(req: Request) {
   if (!parsed.success) return NextResponse.json({ error: "Please fix the highlighted fields.", fields: fieldErrors(parsed.error) }, { status: 422 });
   const input = parsed.data;
   if (input.website) return NextResponse.json({ ok: true, ref: "BP-000000" }); // honeypot
+
+  // Out of emails for today? Turn the booking away before touching the card.
+  try {
+    const cap = await bookingCapacity(input.zip, cardsRequired());
+    if (!cap.ok) return NextResponse.json({ error: LIMIT_MESSAGE[cap.reason], limit: cap.reason }, { status: 429 });
+  } catch (e) { console.error("capacity check failed", e); }
 
   // Verify the card / Apple Pay the browser saved with Stripe, then link it to
   // a Stripe customer so it can be charged after the service.

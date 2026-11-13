@@ -36,6 +36,7 @@ export function BookingWizard({ packages, initialPackage, initialZip, initialPro
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<{ ref: string; accountToken: string | null; promoStatus?: string; card?: string | null } | null>(null);
   const [formError, setFormError] = useState("");
+  const [limitMsg, setLimitMsg] = useState(""); // "we're full today" pop-up
 
   const set = <K extends keyof Data>(k: K, v: Data[K]) => { setD((x) => ({ ...x, [k]: v })); setErrors((e) => ({ ...e, [k]: "" })); };
   const pkg = packages.find((p) => p.id === d.package_id);
@@ -117,6 +118,11 @@ export function BookingWizard({ packages, initialPackage, initialZip, initialPro
     if (!(await validate(LAST))) return;
     setBusy(true); setFormError("");
     try {
+      // still taking bookings today? (checked before the card is saved)
+      try {
+        const cap = await (await fetch(`/api/bookings/capacity?zip=${encodeURIComponent(d.zip)}`, { cache: "no-store" })).json();
+        if (cap && cap.ok === false) { setLimitMsg(cap.message); setBusy(false); return; }
+      } catch {}
       // save the card / Apple Pay with Stripe first (nothing is charged)
       let setup_intent = "";
       if (cardsEnabled) {
@@ -133,6 +139,7 @@ export function BookingWizard({ packages, initialPackage, initialZip, initialPro
         body: JSON.stringify({ ...d, setup_intent }),
       });
       const j = await r.json();
+      if (!r.ok && j.limit) { setLimitMsg(j.error); setBusy(false); return; }
       if (!r.ok) {
         setFormError(j.error ?? "Something went wrong.");
         if (j.fields) {
@@ -187,6 +194,23 @@ export function BookingWizard({ packages, initialPackage, initialZip, initialPro
           🎁 {promo.label}: code <b>{promo.code}</b> applies if this is your first BluePalm booking.
         </motion.p>
       )}
+      {/* "we're full today" pop-up (email limit reached); nothing was saved or charged */}
+      <AnimatePresence>
+        {limitMsg && (
+          <motion.div key="limit" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] grid place-items-center bg-navy/50 p-4 backdrop-blur-sm" onClick={() => setLimitMsg("")}>
+            <motion.div role="alertdialog" aria-modal="true" aria-labelledby="limit-title" aria-describedby="limit-body"
+              initial={{ scale: 0.94, y: 12 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.96, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()} className="card w-full max-w-md p-7 text-center">
+              <div className="mx-auto mb-4 grid size-14 place-items-center rounded-full bg-sky text-2xl" aria-hidden>🗓️</div>
+              <h2 id="limit-title" className="font-display text-2xl font-extrabold">We&apos;re fully booked for today</h2>
+              <p id="limit-body" className="mt-3 text-ink-muted">{limitMsg}</p>
+              <p className="mt-2 text-sm text-ink-muted">Nothing was charged and your card wasn&apos;t saved.</p>
+              <button type="button" autoFocus onClick={() => setLimitMsg("")} className="btn-primary mt-6 w-full">OK</button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       {/* progress */}
       <ol className="mb-8 flex items-center gap-2" aria-label="Booking progress">
         {STEPS.map((s, i) => (
