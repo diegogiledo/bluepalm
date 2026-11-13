@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import "leaflet/dist/leaflet.css";
 import "leaflet.markercluster/dist/MarkerCluster.css";
 
@@ -12,7 +12,7 @@ export type MapPartner = {
 const BLUE = "#1264D6";
 const initials = (n: string) => n.split(/\s+/).filter((w) => /[A-Za-z0-9]/.test(w)).slice(0, 2).map((w) => w.replace(/[^A-Za-z0-9]/g, "")[0] ?? "").join("").toUpperCase();
 const CSS = `
-.bp-logo-pin span{display:grid;place-items:center;width:38px;height:38px;border-radius:999px;background:#fff;border:2px solid ${BLUE};box-shadow:0 2px 6px rgba(11,35,66,.3);overflow:hidden;font:800 12px/1 Arial,sans-serif;color:${BLUE}}
+.bp-logo-pin span{display:grid;place-items:center;width:38px;height:38px;border-radius:999px;background:#fff;border:2px solid ${BLUE};box-shadow:0 2px 6px rgba(11,35,66,.25);overflow:hidden;font:800 12px/1 Arial,sans-serif;color:${BLUE}}
 .bp-logo-pin img{width:34px!important;height:34px!important;max-width:34px!important;object-fit:contain;padding:3px;background:#fff;box-sizing:border-box}
 .bp-cluster span{display:grid;place-items:center;width:42px;height:42px;border-radius:999px;background:${BLUE};color:#fff;font:800 15px/1 Arial,sans-serif;border:3px solid #fff;box-shadow:0 0 0 4px rgba(18,100,214,.25),0 2px 8px rgba(11,35,66,.35)}
 .bp-cluster:hover span{transform:scale(1.1)}
@@ -28,10 +28,64 @@ const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&
 /**
  * Coverage map: each detailer is a translucent circle the size of the area
  * they travel to, so places many detailers cover show up darker (a heat map).
- * Map tiles: OpenStreetMap (free, attribution shown).
+ * Map tiles: Esri World Light Gray Canvas (minimal, no API key; attribution shown).
  */
+
+/**
+ * Coverage heat layer: a grid over the region where each cell is shaded by how
+ * many detailers travel there (distance from their base <= their radius).
+ * Drawn once to a small canvas and stretched over the map, which the browser
+ * smooths into a soft gradient: one clean layer instead of 70+ overlapping circles.
+ */
+const MI_PER_DEG_LAT = 69.0;
+function coverageImage(points: { lat: number; lon: number; radius_miles: number }[]) {
+  const pad = 0.6;
+  const south = Math.min(...points.map((p) => p.lat)) - pad, north = Math.max(...points.map((p) => p.lat)) + pad;
+  const west = Math.min(...points.map((p) => p.lon)) - pad, east = Math.max(...points.map((p) => p.lon)) + pad;
+  const step = 0.012; // ~1.3 km cells
+  const w = Math.ceil((east - west) / step), h = Math.ceil((north - south) / step);
+  const counts = new Uint16Array(w * h);
+  let max = 1;
+  for (let y = 0; y < h; y++) {
+    const lat = north - (y + 0.5) * step;
+    const miPerDegLon = MI_PER_DEG_LAT * Math.cos((lat * Math.PI) / 180);
+    for (let x = 0; x < w; x++) {
+      const lon = west + (x + 0.5) * step;
+      let n = 0;
+      for (const p of points) {
+        const dy = (lat - p.lat) * MI_PER_DEG_LAT, dx = (lon - p.lon) * miPerDegLon;
+        if (dx * dx + dy * dy <= p.radius_miles * p.radius_miles) n++;
+      }
+      counts[y * w + x] = n;
+      if (n > max) max = n;
+    }
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext("2d")!;
+  const img = ctx.createImageData(w, h);
+  // colour ramp: pale sky → brand blue → deep navy; empty cells stay transparent
+  const ramp = [[147, 197, 253], [96, 165, 250], [37, 99, 235], [29, 78, 216]];
+  for (let i = 0; i < counts.length; i++) {
+    const n = counts[i];
+    if (!n) continue;
+    const t = Math.sqrt(n / max) * (ramp.length - 1);
+    const a = ramp[Math.floor(t)], b = ramp[Math.min(ramp.length - 1, Math.floor(t) + 1)], f = t - Math.floor(t);
+    img.data.set([a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f, 40 + 150 * (n / max)], i * 4);
+  }
+  ctx.putImageData(img, 0, 0);
+  // scale up with a blur so the edges are soft gradients, not pixel steps
+  const S = 4, out = document.createElement("canvas");
+  out.width = w * S; out.height = h * S;
+  const o = out.getContext("2d")!;
+  o.filter = "blur(10px)";
+  o.imageSmoothingEnabled = true;
+  o.drawImage(canvas, 0, 0, out.width, out.height);
+  return { url: out.toDataURL(), bounds: [[south, west], [north, east]] as [[number, number], [number, number]], max };
+}
 export function CoverageMap({ partners }: { partners: MapPartner[] }) {
   const box = useRef<HTMLDivElement>(null);
+  const [max, setMax] = useState(0);
 
   useEffect(() => {
     let map: import("leaflet").Map | undefined;
@@ -42,9 +96,15 @@ export function CoverageMap({ partners }: { partners: MapPartner[] }) {
       await import("leaflet.markercluster");
       if (cancelled || !box.current) return;
       map = L.map(box.current, { scrollWheelZoom: false }).setView([27.55, -82.5], 9);
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        maxZoom: 16, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      const ESRI = "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas";
+      L.tileLayer(`${ESRI}/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}`, {
+        maxZoom: 16, attribution: "Tiles &copy; Esri &mdash; Esri, HERE, Garmin, &copy; OpenStreetMap contributors",
       }).addTo(map);
+      // city and road names drawn above the coverage shading so they stay readable
+      map.createPane("labels");
+      map.getPane("labels")!.style.zIndex = "450";
+      map.getPane("labels")!.style.pointerEvents = "none";
+      L.tileLayer(`${ESRI}/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}`, { maxZoom: 16, pane: "labels" }).addTo(map);
       // Detailers placed at the same city centre are fanned out slightly so they separate when zoomed in.
       const seen = new Map<string, number>();
       const shown = partners.map((p) => {
@@ -55,9 +115,13 @@ export function CoverageMap({ partners }: { partners: MapPartner[] }) {
         const a = n * 2.4, r = 0.006 * Math.sqrt(n);
         return { ...p, lat: p.lat + r * Math.sin(a), lon: p.lon + r * Math.cos(a) };
       });
-      for (const p of shown) {
-        L.circle([p.lat, p.lon], { radius: p.radius_miles * 1609.34, color: BLUE, weight: 1, opacity: 0.45, fillColor: BLUE, fillOpacity: 0.08 }).addTo(map);
+      if (partners.length) {
+        const heat = coverageImage(partners);
+        L.imageOverlay(heat.url, heat.bounds, { opacity: 0.85, interactive: false, className: "bp-heat" }).addTo(map);
+        setMax(heat.max);
       }
+      // one detailer's travel area, drawn only while you hover their logo
+      let ring: import("leaflet").Circle | null = null;
       // Crowded areas become one pin with a count; zoom in (or click it) and the logos spread out.
       const group = L.markerClusterGroup({
         maxClusterRadius: 44, showCoverageOnHover: false, spiderfyOnMaxZoom: true, disableClusteringAtZoom: 13,
@@ -70,11 +134,10 @@ export function CoverageMap({ partners }: { partners: MapPartner[] }) {
           : ini;
         const icon = L.divIcon({ className: "bp-logo-pin", html: `<span>${logo}</span>`, iconSize: [38, 38], iconAnchor: [19, 19] });
         const card = `<div class="bp-card">
-          ${p.logo_url ? `<img src="${esc(p.logo_url)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()">` : ""}
           <b>${esc(p.name)}</b>
           ${p.owner ? `<div>Owner: ${esc(p.owner)}</div>` : ""}
           <div>${esc(p.city || "City unknown")} · travels ${p.radius_miles} mi</div>
-          <div>${esc(p.counties.join(", "))}</div>
+          <div class="bp-muted">${esc(p.counties.map((c) => c.replace(/ County$/, "")).join(", "))}</div>
           ${p.phone ? `<div>${esc(p.phone)}</div>` : ""}
           ${p.email ? `<div>${esc(p.email)}</div>` : `<div class="bp-warn">No email: can't get jobs</div>`}
           ${p.website ? `<div class="bp-muted">${esc(p.website.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, ""))}</div>` : ""}
@@ -83,10 +146,12 @@ export function CoverageMap({ partners }: { partners: MapPartner[] }) {
         const marker = L.marker([p.lat, p.lon], { icon, riseOnHover: true, title: p.name });
         // open the card above the logo, or below it when the logo is near the top of the map
         marker.on("mouseover", () => {
-          const below = map!.latLngToContainerPoint(marker.getLatLng()).y < 250;
+          ring?.remove();
+          ring = L.circle([p.lat, p.lon], { radius: p.radius_miles * 1609.34, color: "#0B2342", weight: 2, dashArray: "6 6", fill: true, fillColor: "#0B2342", fillOpacity: 0.04, interactive: false }).addTo(map!);
+          const below = map!.latLngToContainerPoint(marker.getLatLng()).y < map!.getSize().y / 2;
           marker.unbindTooltip().bindTooltip(card, { direction: below ? "bottom" : "top", offset: [0, below ? 20 : -20], opacity: 1, className: "bp-tip" }).openTooltip();
         });
-        marker.on("mouseout", () => marker.closeTooltip());
+        marker.on("mouseout", () => { marker.closeTooltip(); ring?.remove(); ring = null; });
         group.addLayer(marker);
       }
       map.addLayer(group);
@@ -98,8 +163,17 @@ export function CoverageMap({ partners }: { partners: MapPartner[] }) {
   return (
     <div>
       <style>{CSS}</style>
-      <div ref={box} className="relative z-0 h-[460px] w-full overflow-hidden rounded-2xl ring-1 ring-navy/10" aria-label="Map of detailer coverage areas" />
-      <p className="mt-2 text-xs text-ink-muted">{partners.length} detailers. Each circle is the area a detailer travels to (their stated radius, or 15 miles when they don&apos;t say). Darker areas are covered by more detailers. Numbered pins group nearby businesses: zoom in or click one to spread them out, then hover a logo for details.</p>
+      <div ref={box} className="relative z-0 h-[520px] w-full overflow-hidden rounded-2xl ring-1 ring-navy/10" aria-label="Map of detailer coverage areas" />
+      <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-ink-muted">
+        <span className="flex items-center gap-2">
+          <span>Detailers covering an area</span>
+          <span className="h-2.5 w-32 rounded-full" style={{ background: "linear-gradient(90deg, rgba(147,197,253,.45), #60a5fa, #2563eb, #1d4ed8)" }} />
+          <span>1</span><span>→</span><span>{max || "many"}</span>
+        </span>
+        <span className="flex items-center gap-2"><span className="grid size-5 place-items-center rounded-full bg-brand text-[10px] font-bold text-white">5</span> group of nearby businesses (zoom in to spread out)</span>
+        <span className="flex items-center gap-2"><span className="inline-block size-4 rounded-full border-2 border-dashed border-navy" /> hover a logo to see how far it travels</span>
+      </div>
+      <p className="mt-1 text-xs text-ink-muted">{partners.length} detailers on the map. Travel radius is what each business states, or 15 miles when it doesn&apos;t say.</p>
     </div>
   );
 }

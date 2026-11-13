@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui";
 import { StateForm, Submit } from "@/components/portal-forms";
 import { CoverageMap, type MapPartner } from "@/components/admin/coverage-map";
 import { LogoImg } from "@/components/admin/logo-img";
+import { AutoSelect } from "@/components/admin/auto-select";
 import { COUNTIES } from "@/lib/config";
 import { canEmailPartners } from "@/lib/partners";
 import type { MarketDetailer } from "@/lib/types";
@@ -90,6 +91,7 @@ function Logo({ m }: { m: MarketDetailer }) {
 
 const STATUSES = ["all", "active", "no_email", "unsubscribed"] as const;
 const STATUS_LABEL: Record<string, string> = { all: "All", active: "Getting jobs", no_email: "No email", unsubscribed: "Unsubscribed" };
+const SORTS = { default: "Getting jobs first", won: "Most jobs won", responded: "Most responses", sent: "Most job emails", name: "Name A–Z" } as const;
 const stateOf = (m: MarketDetailer) => m.status === "unsubscribed" ? "unsubscribed" : m.email ? "active" : "no_email";
 
 export default async function Detailers({ searchParams }: PageProps<"/admin/detailers">) {
@@ -100,6 +102,7 @@ export default async function Detailers({ searchParams }: PageProps<"/admin/deta
   const county = typeof sp.county === "string" && COUNTY_NAMES.includes(sp.county) ? sp.county : "";
   const status = typeof sp.status === "string" && (STATUSES as readonly string[]).includes(sp.status) ? sp.status : "all";
   const q = typeof sp.q === "string" ? sp.q.trim().toLowerCase() : "";
+  const sort = typeof sp.sort === "string" && sp.sort in SORTS ? (sp.sort as keyof typeof SORTS) : "default";
   const [partners, offers] = await Promise.all([db.select("market_detailers"), db.select("job_offers")]);
   const stats = (id: string) => {
     const o = offers.filter((x) => x.market_detailer_id === id);
@@ -109,14 +112,24 @@ export default async function Detailers({ searchParams }: PageProps<"/admin/deta
   const rows = inCounty
     .filter((m) => status === "all" || stateOf(m) === status)
     .filter((m) => !q || [m.business_name, m.owner_name, m.email, m.city, m.phone].some((x) => x?.toLowerCase().includes(q)))
-    .sort((a, b) => STATUSES.indexOf(stateOf(a)) - STATUSES.indexOf(stateOf(b)) || a.business_name.localeCompare(b.business_name));
+    .sort((a, b) => {
+      const byName = a.business_name.localeCompare(b.business_name);
+      if (sort === "name") return byName;
+      if (sort !== "default") {
+        const k = sort === "won" ? "won" : sort === "responded" ? "responded" : "sent";
+        const sa = stats(a.id), sb = stats(b.id);
+        // most first; ties broken by the next stat, then name
+        return sb[k] - sa[k] || sb.won - sa.won || sb.responded - sa.responded || byName;
+      }
+      return STATUSES.indexOf(stateOf(a)) - STATUSES.indexOf(stateOf(b)) || byName;
+    });
   const mapData: MapPartner[] = inCounty.filter((m) => m.lat != null && m.lon != null && m.status !== "unsubscribed").map((m) => ({
     id: m.id, name: m.business_name, city: m.city, lat: m.lat!, lon: m.lon!, radius_miles: Number(m.radius_miles) || 15,
     logo_url: m.logo_url, sent: stats(m.id).sent, won: stats(m.id).won,
     owner: m.owner_name, phone: m.phone, email: m.email, website: m.website, counties: m.counties,
   }));
   const totals = { sent: offers.length, responded: offers.filter((x) => x.responded_at && x.status !== "taken").length, won: offers.filter((x) => x.status === "accepted").length };
-  const link = (p: Record<string, string>) => "/admin/detailers?" + new URLSearchParams({ ...(county ? { county } : {}), ...(status !== "all" ? { status } : {}), ...(q ? { q } : {}), ...p }).toString();
+  const link = (p: Record<string, string>) => "/admin/detailers?" + new URLSearchParams({ ...(county ? { county } : {}), ...(status !== "all" ? { status } : {}), ...(q ? { q } : {}), ...(sort !== "default" ? { sort } : {}), ...p }).toString();
 
   return (
     <div className="space-y-8">
@@ -179,7 +192,13 @@ export default async function Detailers({ searchParams }: PageProps<"/admin/deta
             <a key={s} href={link({ status: s === "all" ? "" : s })} className={`rounded-full px-3 py-1.5 text-xs font-semibold ${status === s ? "bg-navy text-white" : "bg-white ring-1 ring-navy/10"}`}>
               {STATUS_LABEL[s]} ({s === "all" ? inCounty.length : inCounty.filter((m) => stateOf(m) === s).length})</a>
           ))}
-          <form className="ml-auto flex gap-2"><input type="hidden" name="county" value={county} /><input name="q" defaultValue={q} placeholder="Search name, email, city" className="input w-56 py-1.5" /><button className="btn-ghost btn-sm">Search</button></form>
+          <form className="ml-auto flex flex-wrap gap-2">
+            <input type="hidden" name="county" value={county} />{status !== "all" && <input type="hidden" name="status" value={status} />}
+            <label className="flex items-center gap-2 text-xs font-semibold">Sort
+              <AutoSelect name="sort" value={sort} options={SORTS} />
+            </label>
+            <input name="q" defaultValue={q} placeholder="Search name, email, city" className="input w-56 py-1.5" /><button className="btn-ghost btn-sm">Search</button>
+          </form>
         </div>
 
         {!rows.length && <p className="card p-8 text-center text-ink-muted">{partners.length ? "No detailers match these filters." : "No detailers yet. Click “Load researched detailers” to add the local businesses we found."}</p>}

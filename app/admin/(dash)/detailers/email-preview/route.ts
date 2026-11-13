@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   await requireStaff();
   const all = await db.select("market_detailers");
-  const first = all.find((m) => m.owner_name && m.counties.includes("Manatee County")) ?? all.find((m) => m.counties.includes("Manatee County"));
+  const first = all.find((m) => m.email && m.owner_name && m.counties.includes("Manatee County")) ?? all.find((m) => m.email && m.counties.includes("Manatee County"));
   const d = new Date(todayFL() + "T12:00"); d.setDate(d.getDate() + ((6 - d.getDay() + 7) % 7 || 7)); // next Saturday
   const sample = {
     package_name: "Inside & Out", vehicle: "medium", date: d.toISOString().slice(0, 10), time_window: "morning",
