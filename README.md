@@ -24,7 +24,7 @@ To reset local data, stop the server and delete the `data/` folder. Packages, la
 
 | Area | Routes |
 |---|---|
-| Marketing | `/`, `/locations/{manatee-county,sarasota-county,st-petersburg,tampa}`, `/become-a-detailer`, `/detailer-agreement` |
+| Marketing | `/`, `/locations/{manatee-county,sarasota-county,st-petersburg,tampa}`, `/detailer-agreement` |
 | Booking | `/book` (6-step wizard) → `POST /api/bookings` |
 | Customer account | `/account/login` (magic link) → `/account` (upcoming, history, rebook, ratings, messages, recurring plans, loyalty) |
 | Detailer portal | `/detailer/login` (magic link) → `/detailer` (onboarding checklist, available/accepted/completed jobs, earnings, ratings, messages) |

@@ -8,6 +8,5 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${base}/`, changeFrequency: "weekly", priority: 1 },
     { url: `${base}/book`, changeFrequency: "monthly", priority: 0.9 },
     ...LOCATIONS.map((l) => ({ url: `${base}/locations/${l.slug}`, changeFrequency: "monthly" as const, priority: 0.8 })),
-    { url: `${base}/become-a-detailer`, changeFrequency: "monthly", priority: 0.6 },
   ];
 }

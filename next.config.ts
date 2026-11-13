@@ -12,6 +12,10 @@ const nextConfig: NextConfig = {
       },
     },
   },
+  async redirects() {
+    // Detailer applications are closed; send old links to the homepage.
+    return [{ source: "/become-a-detailer", destination: "/", permanent: false }];
+  },
   async headers() {
     return [
       {

@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { MagicLinkForm } from "@/components/portal-forms";
 import { redirect } from "next/navigation";
 import { requestMagicLink } from "../../account/actions";
@@ -18,9 +17,6 @@ export default async function LoginPage({ searchParams }: PageProps<"/detailer/l
         <p className="mb-6 mt-2 text-ink-muted">Approved BluePalm detailers: enter your email and we'll send a secure sign-in link.</p>
         {invalid && <p className="field-error mb-4">That link is invalid or has expired. Request a new one below.</p>}
         <MagicLinkForm action={requestMagicLink.bind(null, "detailer")} />
-        <p className="mt-6 text-center text-sm text-ink-muted">
-          Not a detailer yet? <Link href="/become-a-detailer" className="font-semibold text-brand">Apply to join</Link>
-        </p>
       </div>
     </div>
   );

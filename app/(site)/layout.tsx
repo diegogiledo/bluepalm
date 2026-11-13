@@ -41,7 +41,6 @@ export default function SiteLayout({ children }: LayoutProps<"/">) {
           <div>
             <h3 className="mb-3 text-sm font-bold uppercase tracking-wider text-white">Detailers</h3>
             <ul className="space-y-2 text-sm">
-              <li><Link className="hover:text-white" href="/become-a-detailer">Become a BluePalm detailer</Link></li>
               <li><Link className="hover:text-white" href="/detailer/login">Detailer portal</Link></li>
               <li><Link className="hover:text-white" href="/detailer-agreement">Contractor agreement</Link></li>
               <li><a className="hover:text-white" href={`mailto:${BRAND.supportEmail}`}>{BRAND.supportEmail}</a></li>

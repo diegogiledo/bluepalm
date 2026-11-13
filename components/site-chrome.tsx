@@ -10,7 +10,6 @@ const LINKS = [
   { href: "/#services", label: "Services" },
   { href: "/#service-area", label: "Service area" },
   { href: "/#faq", label: "FAQ" },
-  { href: "/become-a-detailer", label: "Become a detailer" },
 ];
 
 export function Nav() {
