@@ -475,19 +475,55 @@ function PnL({ series, total: T, segmented, expenses, detailersActive }: { serie
 }
 
 function ExpenseList({ expenses }: { expenses: Expense[] }) {
+  // one filter per column; empty = no filter
+  const [f, setF] = useState({ month: "", category: "", note: "", min: "", max: "" });
+  const [sort, setSort] = useState<{ k: "month" | "category" | "note" | "amount"; desc: boolean }>({ k: "month", desc: true });
   if (!expenses.length) return <p className="mt-3 text-sm text-ink-muted">No expenses entered for this period.</p>;
-  const sorted = [...expenses].sort((a, b) => b.month.localeCompare(a.month) || a.category.localeCompare(b.category));
+  const months = [...new Set(expenses.map((e) => e.month))].sort().reverse();
+  const cats = [...new Set(expenses.map((e) => e.category))].sort();
+  const min = f.min === "" ? null : Number(f.min), max = f.max === "" ? null : Number(f.max);
+  const shown = expenses
+    .filter((e) => (!f.month || e.month === f.month) && (!f.category || e.category === f.category)
+      && (!f.note || e.note.toLowerCase().includes(f.note.toLowerCase())) && (min == null || e.amount >= min) && (max == null || e.amount <= max))
+    .sort((a, b) => {
+      const c = sort.k === "amount" ? a.amount - b.amount : String(a[sort.k]).localeCompare(String(b[sort.k]));
+      return (sort.desc ? -c : c) || a.category.localeCompare(b.category);
+    });
+  const active = Object.values(f).some(Boolean);
+  const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value });
+  const head = (k: typeof sort.k, label: string, right = false) => (
+    <th className={`p-2 ${right ? "text-right" : ""}`}>
+      <button type="button" onClick={() => setSort({ k, desc: sort.k === k ? !sort.desc : k === "amount" || k === "month" })} className="uppercase hover:text-navy">
+        {label}{sort.k === k ? (sort.desc ? " ↓" : " ↑") : ""}</button>
+    </th>
+  );
+  const cell = "input py-1 text-xs font-normal normal-case tracking-normal";
   return (
-    <div className="mt-4 max-h-72 overflow-y-auto">
-      <table className="w-full text-left text-sm">
-        <thead className="sticky top-0 bg-white text-xs uppercase tracking-wider text-ink-muted"><tr><th className="p-2">Month</th><th className="p-2">Category</th><th className="p-2">Note</th><th className="p-2 text-right">Amount</th><th className="p-2" /></tr></thead>
-        <tbody className="divide-y divide-navy/5">
-          {sorted.map((e) => (
-            <tr key={e.id}><td className="p-2">{monthLabel(e.month, true)}</td><td className="p-2">{e.category}</td><td className="p-2 text-ink-muted">{e.note}</td><td className="p-2 text-right tabular-nums">{usd(e.amount, 2)}</td>
-              <td className="p-2 text-right"><form action={deleteExpense}><input type="hidden" name="id" value={e.id} /><button className="text-xs font-semibold text-red-600 underline">Delete</button></form></td></tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="mt-4">
+      <div className="max-h-96 overflow-y-auto">
+        <table className="w-full text-left text-sm">
+          <thead className="sticky top-0 z-10 bg-white text-xs uppercase tracking-wider text-ink-muted">
+            <tr>{head("month", "Month")}{head("category", "Category")}{head("note", "Note")}{head("amount", "Amount", true)}<th className="p-2" /></tr>
+            <tr className="border-b border-navy/10">
+              <th className="px-2 pb-2"><select aria-label="Filter by month" value={f.month} onChange={set("month")} className={cell}><option value="">All months</option>{months.map((m) => <option key={m} value={m}>{monthLabel(m, true)}</option>)}</select></th>
+              <th className="px-2 pb-2"><select aria-label="Filter by category" value={f.category} onChange={set("category")} className={cell}><option value="">All categories</option>{cats.map((c) => <option key={c}>{c}</option>)}</select></th>
+              <th className="px-2 pb-2"><input aria-label="Filter by note" value={f.note} onChange={set("note")} placeholder="Contains…" className={cell} /></th>
+              <th className="px-2 pb-2"><div className="flex justify-end gap-1">
+                <input aria-label="Minimum amount" type="number" min="0" value={f.min} onChange={set("min")} placeholder="Min $" className={`${cell} w-20`} />
+                <input aria-label="Maximum amount" type="number" min="0" value={f.max} onChange={set("max")} placeholder="Max $" className={`${cell} w-20`} /></div></th>
+              <th className="px-2 pb-2 text-right">{active && <button type="button" onClick={() => setF({ month: "", category: "", note: "", min: "", max: "" })} className="text-xs font-semibold normal-case tracking-normal text-brand underline">Clear</button>}</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-navy/5">
+            {shown.map((e) => (
+              <tr key={e.id} className="hover:bg-sky/40"><td className="p-2">{monthLabel(e.month, true)}</td><td className="p-2">{e.category}</td><td className="p-2 text-ink-muted">{e.note}</td><td className="p-2 text-right tabular-nums">{usd(e.amount, 2)}</td>
+                <td className="p-2 text-right"><form action={deleteExpense}><input type="hidden" name="id" value={e.id} /><button className="text-xs font-semibold text-red-600 underline">Delete</button></form></td></tr>
+            ))}
+            {!shown.length && <tr><td colSpan={5} className="p-6 text-center text-ink-muted">No expenses match these filters.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-2 flex justify-between border-t border-navy/10 pt-2 text-sm"><span className="text-ink-muted">{shown.length} of {expenses.length} expenses{active ? " (filtered)" : ""}</span><b className="tabular-nums">Total {usd(shown.reduce((s, e) => s + e.amount, 0), 2)}</b></p>
     </div>
   );
 }
