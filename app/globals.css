@@ -94,14 +94,3 @@ html[data-admin-theme="dark"] :is(.border-red-200, .border-red-300) { border-col
 html[data-admin-theme="dark"] .bg-indigo-100 { background-color: rgb(99 102 241 / 0.22); }
 html[data-admin-theme="dark"] .text-indigo-700 { color: #a5b4fc; }
 html[data-admin-theme="dark"] .bg-\[\#cfe6ff\] { background-color: var(--color-sky-200); }
-/* map controls and pop-ups */
-html[data-admin-theme="dark"] .leaflet-container { background: #0f1724; }
-html[data-admin-theme="dark"] .leaflet-bar a { background: #1b2638; color: #e3e9f3; border-color: #2a3850; }
-html[data-admin-theme="dark"] .leaflet-control-attribution { background: rgb(11 17 28 / 0.75) !important; color: #9aa8bc; }
-html[data-admin-theme="dark"] .leaflet-control-attribution a { color: #c7d2e3; }
-html[data-admin-theme="dark"] .leaflet-tooltip { background: #141d2c; color: #e3e9f3; }
-html[data-admin-theme="dark"] .leaflet-tooltip-top::before { border-top-color: #141d2c; }
-html[data-admin-theme="dark"] .leaflet-tooltip-bottom::before { border-bottom-color: #141d2c; }
-html[data-admin-theme="dark"] .bp-card { color: #e3e9f3; }
-html[data-admin-theme="dark"] .bp-card .bp-muted, html[data-admin-theme="dark"] .bp-muted { color: #9aa8bc; }
-html[data-admin-theme="dark"] .bp-stats { border-top-color: #2a3850; color: #9aa8bc; }

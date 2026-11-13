@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useRef } from "react";
 import "maplibre-gl/dist/maplibre-gl.css";
-import type { Map as MLMap, Marker, StyleSpecification } from "maplibre-gl";
+import type { Map as MLMap, Marker } from "maplibre-gl";
+import { MAP_WORKER_URL, SOFT_MAP_CSS, softStyle } from "@/lib/soft-map";
 
 export type Pin = { lat: number; lon: number };
 
@@ -11,40 +12,7 @@ export type Pin = { lat: number; lon: number };
  * BluePalm pin with a pulsing halo. Free vector tiles from OpenFreeMap
  * (OpenStreetMap data), no API key.
  */
-const STYLE_URL = "https://tiles.openfreemap.org/styles/positron";
-const COLORS = {
-  land: "#f4f2ed", residential: "#efece5", building: "#e7e3db", park: "#d9eed0", wood: "#dcefd4",
-  water: "#c4e2f6", roadCasing: "#e4e0d8", road: "#ffffff", motorway: "#fdf6e3", label: "#7d8795", halo: "#ffffff",
-};
-
-let styleCache: Promise<StyleSpecification> | null = null;
-/** The base style, recoloured to the soft palette (fetched once per page). */
-function softStyle(): Promise<StyleSpecification> {
-  styleCache ??= fetch(STYLE_URL).then((r) => r.json()).then((s: StyleSpecification) => {
-    s.layers = s.layers.filter((l) => !("source-layer" in l && l["source-layer"] === "boundary")).map((l) => {
-      const layer = l as typeof l & { paint?: Record<string, unknown>; layout?: Record<string, unknown> };
-      const src = "source-layer" in l ? l["source-layer"] : "";
-      const p = (layer.paint ??= {});
-      if (l.type === "background") p["background-color"] = COLORS.land;
-      else if (src === "water" && l.type === "fill") { p["fill-color"] = COLORS.water; p["fill-outline-color"] = COLORS.water; }
-      else if (src === "waterway" && l.type === "line") p["line-color"] = COLORS.water;
-      else if (src === "park") { p["fill-color"] = COLORS.park; p["fill-opacity"] = 1; }
-      else if (src === "landcover") p["fill-color"] = COLORS.wood;
-      else if (src === "landuse") p["fill-color"] = COLORS.residential;
-      else if (src === "building") { p["fill-color"] = COLORS.building; p["fill-outline-color"] = COLORS.building; }
-      else if (src === "transportation" && l.type === "line") p["line-color"] = /casing/.test(l.id) ? COLORS.roadCasing : /motorway|trunk/.test(l.id) ? COLORS.motorway : COLORS.road;
-      else if (l.type === "symbol") { p["text-color"] = COLORS.label; p["text-halo-color"] = COLORS.halo; p["text-halo-width"] = 1.4; }
-      return layer;
-    });
-    return s;
-  });
-  return styleCache;
-}
-
 const CSS = `
-.bp-addr-map .maplibregl-ctrl-group{border-radius:999px;box-shadow:0 4px 14px rgba(11,35,66,.14);overflow:hidden;border:0}
-.bp-addr-map .maplibregl-ctrl-group button{width:32px;height:32px}
-.bp-addr-map .maplibregl-ctrl-attrib{font-size:10px;background:rgba(255,255,255,.75);border-radius:999px 0 0 0}
 .bp-pin{position:relative;width:52px;height:64px;pointer-events:none}
 .bp-pin-halo{position:absolute;left:50%;bottom:-11px;width:40px;height:16px;margin-left:-20px;border-radius:50%;background:rgba(18,100,214,.28);animation:bp-pulse 2.2s ease-out infinite}
 .bp-pin-shadow{position:absolute;left:50%;bottom:-3px;width:16px;height:6px;margin-left:-8px;border-radius:50%;background:rgba(11,35,66,.25);filter:blur(1px)}
@@ -71,7 +39,7 @@ export function AddressMap({ pin, label, notFound = false }: { pin: Pin | null; 
     (async () => {
       const [ml, style] = await Promise.all([import("maplibre-gl"), softStyle()]);
       if (cancelled || !box.current) return;
-      ml.setWorkerUrl("/vendor/maplibre-gl-worker.mjs"); // served from /public (copied on install)
+      ml.setWorkerUrl(MAP_WORKER_URL);
       const map = new ml.Map({
         container: box.current, style, center: [pin.lon, pin.lat], zoom: 16,
         attributionControl: { compact: true }, scrollZoom: false, dragRotate: false, pitchWithRotate: false, touchPitch: false,
@@ -109,8 +77,8 @@ export function AddressMap({ pin, label, notFound = false }: { pin: Pin | null; 
   }
 
   return (
-    <div className="bp-addr-map relative h-52 overflow-hidden rounded-[22px] bg-[#f4f2ed] shadow-[0_10px_30px_-14px_rgba(11,35,66,.35)] ring-1 ring-navy/10 md:h-full md:min-h-[206px]">
-      <style>{CSS}</style>
+    <div className="bp-addr-map bp-soft relative h-52 overflow-hidden rounded-[22px] bg-[#f4f2ed] shadow-[0_10px_30px_-14px_rgba(11,35,66,.35)] ring-1 ring-navy/10 md:h-full md:min-h-[206px]">
+      <style>{SOFT_MAP_CSS + CSS}</style>
       <div className={`absolute inset-0 ${pin && !notFound ? "" : "invisible"}`} aria-label={pin ? `Map showing ${label}` : undefined} role={pin ? "img" : undefined}>
         <div ref={box} className="h-full w-full" />
       </div>
