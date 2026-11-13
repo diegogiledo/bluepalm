@@ -365,12 +365,13 @@ export async function wipeTestBookings(_: PartnerState): Promise<PartnerState> {
   } catch (e) { return { error: String((e as Error).message ?? e) }; }
 }
 
-export async function makeTestHistory(_: PartnerState): Promise<PartnerState> {
+export async function makeTestHistory(_: PartnerState, form: FormData): Promise<PartnerState> {
   await requireStaff(["admin"]);
   const { canMakeTestData, generateTestHistory } = await import("@/lib/test-data");
   if (!canMakeTestData()) return { error: "Test data can only be made on your computer with Stripe test keys." };
   try {
-    const r = await generateTestHistory(6);
+    const scale = [1, 5, 10, 12].includes(num(form, "scale")) ? num(form, "scale") : 1;
+    const r = await generateTestHistory(6, scale);
     revalidatePath("/admin", "layout");
     return { ok: `Added ${r.bookings} past bookings (${r.completed} completed) and ${r.expenses} test expenses over the last 6 months.` };
   } catch (e) { return { error: String((e as Error).message ?? e) }; }

@@ -175,7 +175,10 @@ export default async function Detailers({ searchParams }: PageProps<"/admin/deta
                   <select name="count" defaultValue="10" className="input w-auto py-1.5">{[5, 10, 20, 30].map((n) => <option key={n} value={n}>{n} bookings</option>)}</select>
                   <Submit className="btn-primary btn-sm" pending="Making bookings…">Generate test bookings</Submit>
                 </StateForm>
-                <StateForm action={makeTestHistory}><Submit className="btn-primary btn-sm" pending="Adding history…">Add 6 months of past bookings</Submit></StateForm>
+                <StateForm action={makeTestHistory} className="flex flex-wrap items-center gap-2">
+                  <select name="scale" defaultValue="1" className="input w-auto py-1.5"><option value="1">~175 bookings</option><option value="5">~880 bookings</option><option value="10">~1,750 bookings</option><option value="12">~2,100 bookings</option></select>
+                  <Submit className="btn-primary btn-sm" pending="Adding history…">Add 6 months of past bookings</Submit>
+                </StateForm>
                 <StateForm action={wipeTestBookings}><Submit className="btn-ghost btn-sm" pending="Deleting…">Delete all test bookings</Submit></StateForm>
               </div>
             </div>

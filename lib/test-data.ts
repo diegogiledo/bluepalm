@@ -90,7 +90,7 @@ export async function deleteTestData() {
  * Payments are marked paid without contacting Stripe (fake test intents), so
  * refunding these from admin will show a Stripe error, which is expected.
  */
-export async function generateTestHistory(months = 6) {
+export async function generateTestHistory(months = 6, scale = 1) {
   if (!canMakeTestData()) throw new Error("Test data can only be made on your computer with Stripe test keys.");
   const { newId, newToken } = await import("./auth");
   const { detailerFor } = await import("./partners");
@@ -110,14 +110,30 @@ export async function generateTestHistory(months = 6) {
   const today = todayFL();
   const now = new Date(today + "T12:00");
 
-  for (let k = months; k >= 1; k--) {
-    const start = new Date(now.getFullYear(), now.getMonth() - k, 1);
-    const days = new Date(start.getFullYear(), start.getMonth() + 1, 0).getDate();
-    const count = Math.round(14 + (months - k) * 6 + Math.random() * 6); // grows each month
-    for (let i = 0; i < count; i++) {
-      const date = new Date(start.getFullYear(), start.getMonth(), 1 + Math.floor(Math.random() * days)).toISOString().slice(0, 10);
+  // Realistic shape: business grows month over month, Florida seasonality
+  // (slower in the summer heat and rain, busier from late fall with snowbirds),
+  // weekends busiest (Saturday most), mornings the favourite slot.
+  const SEASON = [1.2, 1.25, 1.3, 1.2, 1.0, 0.85, 0.8, 0.8, 0.85, 1.0, 1.15, 1.2]; // Jan..Dec
+  const WEEKDAY = [1.15, 0.7, 0.75, 0.85, 0.95, 1.25, 1.6]; // Sun..Sat
+  const WINDOWS = [["morning", 0.45], ["midday", 0.32], ["afternoon", 0.23]] as const;
+  const SIZES = [["small", 0.3], ["medium", 0.45], ["large", 0.25]] as const;
+  const weighted = <T,>(opts: readonly (readonly [T, number])[]) => { let x = Math.random(); for (const [v, w] of opts) { x -= w; if (x <= 0) return v; } return opts[0][0]; };
+  const FINISH: Record<string, string> = { morning: "15:30", midday: "18:30", afternoon: "21:30" }; // ≈ 11:30am / 2:30pm / 5:30pm Florida, in UTC
+  for (let k = months; k >= 0; k--) { // k = 0 is this month, up to yesterday
+    const start = new Date(Date.UTC(now.getFullYear(), now.getMonth() - k, 1));
+    const daysInMonth = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 0)).getUTCDate();
+    const lastDay = k === 0 ? Math.max(0, Number(today.slice(8, 10)) - 1) : daysInMonth;
+    if (!lastDay) continue;
+    const base = (14 + (months - k) * 6) * SEASON[start.getUTCMonth()] * scale; // monthly volume
+    // spread the month's bookings over its days by weekday popularity
+    for (let day = 1; day <= lastDay; day++) {
+      const dt = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), day));
+      const expected = (base / daysInMonth) * WEEKDAY[dt.getUTCDay()] / 1.04;
+      const n = Math.floor(expected) + (Math.random() < expected % 1 ? 1 : 0);
+    for (let i = 0; i < n; i++) {
+      const date = dt.toISOString().slice(0, 10);
       if (date >= today) continue;
-      let cust = pool.length > 8 && Math.random() < 0.33 ? pick(pool) : null;
+      let cust = pool.length > 8 * scale && Math.random() < 0.33 ? pick(pool) : null;
       const isNew = !cust;
       if (!cust) {
         const first = pick(FIRST), last = pick(LAST);
@@ -125,7 +141,7 @@ export async function generateTestHistory(months = 6) {
         pool.push(cust);
         customers.push({ id: cust.id, email: cust.email, name: cust.name, phone: `813555${1000 + Math.floor(Math.random() * 8999)}`, access_token: newToken(), loyalty_points: 0, created_at: addDays(date, -5) + "T12:00:00.000Z" });
       }
-      const z = pick(usable), pkg = pkgPick(), vehicle = pick(VEHICLES).id;
+      const z = pick(usable), pkg = pkgPick(), vehicle = weighted(SIZES) as string, window = weighted(WINDOWS) as string;
       const m = pick(live.filter((p) => p.counties.includes(z.county)));
       let detailerId = accounts.get(m.id);
       if (!detailerId) { detailerId = (await detailerFor(m)).id; accounts.set(m.id, detailerId); }
@@ -137,7 +153,7 @@ export async function generateTestHistory(months = 6) {
       bookings.push({
         id: newId(), ref: `BP-${Math.random().toString(16).slice(2, 8).toUpperCase()}`, customer_id: cust.id,
         zip: z.zip, address: `${100 + Math.floor(Math.random() * 9800)} ${pick(STREETS)}`, city: z.city, vehicle, vehicle_details: "",
-        package_id: pkg.id, package_name: pkg.name, price_estimate: pkg.base_price, date, time_window: pick(TIME_WINDOWS).id,
+        package_id: pkg.id, package_name: pkg.name, price_estimate: pkg.base_price, date, time_window: window,
         preferred_detailer_id: null, instructions: "[TEST DATA] Past booking for testing.",
         status: cancelled ? "cancelled" : "completed", detailer_id: cancelled ? null : detailerId, recurring_plan_id: null,
         commission_rate: rate, final_price: cancelled ? null : final,
@@ -148,21 +164,33 @@ export async function generateTestHistory(months = 6) {
         cancel_reason: cancelled ? "Cancelled by customer (test)" : "",
         customer_rating: !cancelled && Math.random() < 0.7 ? (Math.random() < 0.75 ? 5 : 4) : null, customer_feedback: "",
         created_at: addDays(date, -(1 + Math.floor(Math.random() * 9))) + "T14:00:00.000Z",
-        completed_at: cancelled ? null : date + "T16:00:00.000Z",
+        completed_at: cancelled ? null : `${date}T${FINISH[window] ?? "18:00"}:00.000Z`,
       });
+    }
     }
   }
   await db.insertMany("customers", customers);
   await db.insertMany("bookings", bookings);
 
-  // test operating expenses, one set per month, so EBITDA has something to subtract
+  // test operating expenses sized to each month's actual test sales (replaces earlier test expenses)
+  for (const e of await db.select("expenses")) if (e.note.startsWith("[TEST]")) await db.remove("expenses", { id: e.id });
+  const all = (await db.select("bookings")).filter((x) => x.status === "completed" && x.instructions.startsWith("[TEST DATA]"));
   const expenses: import("./types").Expense[] = [];
-  for (let k = months; k >= 1; k--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - k, 1), month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    const grow = months - k;
-    for (const [category, amount] of [["Marketing", 350 + grow * 120 + Math.random() * 150], ["Software", 129], ["Insurance", 95], ["Office & admin", 60 + Math.random() * 80]] as const) {
-      expenses.push({ id: newId(), month, category, amount: Math.round(Number(amount)), note: "[TEST] sample expense", created_at: new Date().toISOString() });
-    }
+  for (let k = months; k >= 0; k--) {
+    const d = new Date(Date.UTC(now.getFullYear(), now.getMonth() - k, 15)), month = d.toISOString().slice(0, 7);
+    const gmv = all.filter((x) => x.date.startsWith(month)).reduce((t, x) => t + (x.final_price ?? 0) * (1 - (x.discount_pct ?? 0) / 100), 0);
+    if (!gmv) continue;
+    const jobs = all.filter((x) => x.date.startsWith(month)).length;
+    // this month is still in progress: only count the share of fixed costs for the days so far
+    const share = k === 0 ? Math.max(1, Number(today.slice(8, 10)) - 1) / new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate() : 1;
+    const lines: [string, number][] = [
+      ["Marketing", gmv * (0.05 + Math.random() * 0.02)],                    // ads, flyers, promos (~a third of what BluePalm keeps)
+      ["Software", (129 + 49 * Math.ceil(jobs / 500)) * share],               // tools that scale with volume
+      ["Insurance", 180 * share],
+      ["Office & admin", 80 * share + gmv * 0.012],
+      ["Payroll", 1500 * share + gmv * 0.025],                                 // part-time coordinator, more hours as volume grows
+    ];
+    for (const [category, amount] of lines) expenses.push({ id: newId(), month, category, amount: Math.round(amount), note: "[TEST] sample expense", created_at: new Date().toISOString() });
   }
   await db.insertMany("expenses", expenses);
   return { bookings: bookings.length, completed: bookings.filter((b) => b.status === "completed").length, expenses: expenses.length };

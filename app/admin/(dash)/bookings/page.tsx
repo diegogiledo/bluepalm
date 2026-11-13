@@ -4,6 +4,9 @@ import { requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { money, publicDetailerName, vehicleLabel } from "@/lib/services";
 import { Badge, fmtDate } from "@/components/ui";
+import { Pager, pageOf } from "@/components/admin/pager";
+
+const PER = 50;
 
 const FILTERS = ["all", "requested", "confirmed", "assigned", "completed", "cancelled"];
 
@@ -19,6 +22,8 @@ export default async function Bookings({ searchParams }: PageProps<"/admin/booki
     .filter((b) => status === "all" || b.status === status)
     .filter((b) => !q || [b.ref, b.city, b.zip, cust[b.customer_id]?.name, cust[b.customer_id]?.email].some((x) => x?.toLowerCase().includes(q)))
     .sort((a, b) => b.created_at.localeCompare(a.created_at));
+  const { page, pages, start } = pageOf(sp.page, rows.length, PER);
+  const pageParams = { ...(status !== "all" ? { status } : {}), ...(q ? { q } : {}) };
   return (
     <div className="space-y-6">
       <h1 className="font-display text-3xl font-extrabold">Bookings</h1>
@@ -35,7 +40,7 @@ export default async function Bookings({ searchParams }: PageProps<"/admin/booki
         <table className="w-full min-w-[860px] text-left text-sm">
           <thead className="text-xs uppercase tracking-wider text-ink-muted"><tr>{["Ref", "Customer", "Service", "Date", "Area", "Detailer", "Price", "Payment", "Status"].map((h) => <th key={h} className="p-4">{h}</th>)}</tr></thead>
           <tbody className="divide-y divide-navy/5">
-            {rows.map((b) => (
+            {rows.slice(start, start + PER).map((b) => (
               <tr key={b.id} className="hover:bg-sky/40">
                 <td className="p-4 font-semibold"><Link href={`/admin/bookings/${b.id}`} className="text-brand hover:underline">{b.ref}</Link>{b.recurring_plan_id && <span className="ml-1 text-xs text-palm" title="Recurring">↻</span>}</td>
                 <td>{cust[b.customer_id]?.name}</td>
@@ -52,6 +57,7 @@ export default async function Bookings({ searchParams }: PageProps<"/admin/booki
           </tbody>
         </table>
       </div>
+      <Pager page={page} pages={pages} total={rows.length} per={PER} base="/admin/bookings" params={pageParams} />
     </div>
   );
 }
