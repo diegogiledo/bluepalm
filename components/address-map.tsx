@@ -3,7 +3,7 @@ import { useEffect, useRef } from "react";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { Map as MLMap, Marker, StyleSpecification } from "maplibre-gl";
 
-export type Pin = { lat: number; lon: number; exact: boolean };
+export type Pin = { lat: number; lon: number };
 
 /**
  * Small map next to the address fields, in a soft, app-like style: pale land,
@@ -41,16 +41,6 @@ function softStyle(): Promise<StyleSpecification> {
   return styleCache;
 }
 
-/** A circle around a point, as a polygon (for "approximate area"). */
-function circle(lon: number, lat: number, meters: number) {
-  const pts: [number, number][] = [];
-  for (let i = 0; i <= 64; i++) {
-    const a = (i / 64) * 2 * Math.PI;
-    pts.push([lon + (meters / (111320 * Math.cos((lat * Math.PI) / 180))) * Math.cos(a), lat + (meters / 110540) * Math.sin(a)]);
-  }
-  return { type: "Feature" as const, properties: {}, geometry: { type: "Polygon" as const, coordinates: [pts] } };
-}
-
 const CSS = `
 .bp-addr-map .maplibregl-ctrl-group{border-radius:999px;box-shadow:0 4px 14px rgba(11,35,66,.14);overflow:hidden;border:0}
 .bp-addr-map .maplibregl-ctrl-group button{width:32px;height:32px}
@@ -70,9 +60,9 @@ const PIN_HTML = `<span class="bp-pin-halo"></span><span class="bp-pin-shadow"><
   <path d="M5 16V12.5L6.8 8.2A2 2 0 0 1 8.6 7h6.8a2 2 0 0 1 1.8 1.2L19 12.5V16"/><path d="M4 16h16v2.2a.8.8 0 0 1-.8.8H17a.8.8 0 0 1-.8-.8V17H7.8v1.2a.8.8 0 0 1-.8.8H4.8a.8.8 0 0 1-.8-.8z"/>
   <path d="M7.5 13.5h1M15.5 13.5h1M6 12.5h12"/></svg></span>`;
 
-export function AddressMap({ pin, label }: { pin: Pin | null; label: string }) {
+export function AddressMap({ pin, label, notFound = false }: { pin: Pin | null; label: string; notFound?: boolean }) {
   const box = useRef<HTMLDivElement>(null);
-  const st = useRef<{ map?: MLMap; marker?: Marker; ready?: boolean }>({});
+  const st = useRef<{ map?: MLMap; marker?: Marker }>({});
 
   // create the map the first time there's a pin
   useEffect(() => {
@@ -83,7 +73,7 @@ export function AddressMap({ pin, label }: { pin: Pin | null; label: string }) {
       if (cancelled || !box.current) return;
       ml.setWorkerUrl("/vendor/maplibre-gl-worker.mjs"); // served from /public (copied on install)
       const map = new ml.Map({
-        container: box.current, style, center: [pin.lon, pin.lat], zoom: pin.exact ? 15.5 : 12.5,
+        container: box.current, style, center: [pin.lon, pin.lat], zoom: 16,
         attributionControl: { compact: true }, scrollZoom: false, dragRotate: false, pitchWithRotate: false, touchPitch: false,
         cooperativeGestures: false,
       });
@@ -97,10 +87,6 @@ export function AddressMap({ pin, label }: { pin: Pin | null; label: string }) {
       map.on("load", () => {
         // keep the map credits folded into the small "i" button
         box.current?.querySelector(".maplibregl-ctrl-attrib")?.classList.remove("maplibregl-compact-show");
-        map.addSource("area", { type: "geojson", data: circle(pin.lon, pin.lat, 1200) });
-        map.addLayer({ id: "area-fill", type: "fill", source: "area", paint: { "fill-color": "#1264d6", "fill-opacity": 0.1 } });
-        map.addLayer({ id: "area-line", type: "line", source: "area", paint: { "line-color": "#1264d6", "line-width": 1.5, "line-opacity": 0.45 } });
-        st.current.ready = true;
         show(pin);
       });
     })();
@@ -108,43 +94,41 @@ export function AddressMap({ pin, label }: { pin: Pin | null; label: string }) {
   }, [pin]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // move the pin when the address changes
-  useEffect(() => { if (pin && st.current.map) show(pin); }, [pin?.lat, pin?.lon, pin?.exact]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (pin && st.current.map) show(pin); }, [pin?.lat, pin?.lon]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => { st.current.map?.remove(); st.current = {}; }, []);
 
   function show(p: Pin) {
-    const { map, marker, ready } = st.current;
+    const { map, marker } = st.current;
     if (!map || !marker) return;
     marker.setLngLat([p.lon, p.lat]);
     // replay the drop-in animation on the new spot
     const head = marker.getElement().querySelector<HTMLElement>(".bp-pin-head");
     if (head) { head.style.animation = "none"; void head.offsetWidth; head.style.animation = ""; }
-    if (ready) {
-      (map.getSource("area") as import("maplibre-gl").GeoJSONSource | undefined)?.setData(circle(p.lon, p.lat, 1200));
-      for (const id of ["area-fill", "area-line"]) map.setLayoutProperty(id, "visibility", p.exact ? "none" : "visible");
-    }
-    map.flyTo({ center: [p.lon, p.lat], zoom: p.exact ? 15.5 : 12.5, duration: 700, offset: [0, 18] });
+    map.flyTo({ center: [p.lon, p.lat], zoom: 16, duration: 700, offset: [0, 18] });
     requestAnimationFrame(() => map.resize());
   }
 
   return (
     <div className="bp-addr-map relative h-52 overflow-hidden rounded-[22px] bg-[#f4f2ed] shadow-[0_10px_30px_-14px_rgba(11,35,66,.35)] ring-1 ring-navy/10 md:h-full md:min-h-[206px]">
       <style>{CSS}</style>
-      <div className={`absolute inset-0 ${pin ? "" : "invisible"}`} aria-label={pin ? `Map showing ${label}` : undefined} role={pin ? "img" : undefined}>
+      <div className={`absolute inset-0 ${pin && !notFound ? "" : "invisible"}`} aria-label={pin ? `Map showing ${label}` : undefined} role={pin ? "img" : undefined}>
         <div ref={box} className="h-full w-full" />
       </div>
-      {!pin && (
+      {(!pin || notFound) && (
         <div className="absolute inset-0 grid place-items-center bg-gradient-to-br from-sky to-white p-6 text-center">
           <div>
             <span className="mx-auto grid size-12 place-items-center rounded-full bg-white shadow-card ring-1 ring-navy/5" aria-hidden>
               <svg viewBox="0 0 24 24" className="size-6" fill="none" stroke="#1264d6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 21s7-6.2 7-11.5A7 7 0 0 0 5 9.5C5 14.8 12 21 12 21Z" /><circle cx="12" cy="9.5" r="2.5" /></svg>
             </span>
-            <p className="mt-3 text-sm font-semibold text-navy/75">Your car&apos;s spot shows here</p>
-            <p className="text-xs text-ink-muted">Enter your address to see it on the map.</p>
+            {notFound ? (<>
+              <p className="mt-3 text-sm font-semibold text-navy/75">We couldn&apos;t find that address</p>
+              <p className="text-xs text-ink-muted">Check the house number, street and ZIP code.</p>
+            </>) : (<>
+              <p className="mt-3 text-sm font-semibold text-navy/75">Your car&apos;s spot shows here</p>
+              <p className="text-xs text-ink-muted">Enter your address to see it on the map.</p>
+            </>)}
           </div>
         </div>
-      )}
-      {pin && !pin.exact && (
-        <p className="absolute inset-x-3 bottom-3 z-10 rounded-full bg-white/95 px-3 py-1.5 text-center text-xs font-semibold text-navy shadow">Approximate area · your detailer gets the exact address</p>
       )}
     </div>
   );

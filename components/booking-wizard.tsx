@@ -46,6 +46,7 @@ export function BookingWizard({ packages, initialPackage, initialZip, initialPro
   const [locating, setLocating] = useState(false);
   const [locNote, setLocNote] = useState("");
   const [pin, setPin] = useState<Pin | null>(null); // where the car is, for the map
+  const [pinMissing, setPinMissing] = useState(false); // address not found anywhere
 
   // keep the map pin in step with the address: look it up when it's typed or edited
   const pinFor = useRef("");
@@ -56,7 +57,8 @@ export function BookingWizard({ packages, initialPackage, initialZip, initialPro
       pinFor.current = key;
       try {
         const j = await (await fetch(`/api/address?geo=1&line1=${encodeURIComponent(d.address)}&city=${encodeURIComponent(d.city)}&zip=${d.zip}`, { signal: AbortSignal.timeout(10000) })).json();
-        if (j.point) setPin(j.point);
+        if (j.point) { setPin({ lat: j.point.lat, lon: j.point.lon }); setPinMissing(false); }
+        else setPinMissing(true);
       } catch {}
     }, 700);
     return () => clearTimeout(t);
@@ -73,7 +75,7 @@ export function BookingWizard({ packages, initialPackage, initialZip, initialPro
     setD((x) => ({ ...x, address: a.line1, city: a.city || x.city, zip: a.zip || x.zip }));
     // the picked suggestion (or the phone's GPS) already knows where it is
     const p = at ?? (a.lat != null && a.lon != null ? { lat: a.lat, lon: a.lon } : null);
-    if (p) { setPin({ ...p, exact: true }); pinFor.current = `${a.line1.trim()}|${(a.city || d.city).trim()}|${a.zip || d.zip}`; }
+    if (p) { setPin(p); setPinMissing(false); pinFor.current = `${a.line1.trim()}|${(a.city || d.city).trim()}|${a.zip || d.zip}`; }
     setErrors((e) => ({ ...e, address: "", city: "", zip: "" }));
     setZipInfo(null);
     if (/^\d{5}$/.test(a.zip)) checkZipNow(a.zip);
@@ -281,7 +283,7 @@ export function BookingWizard({ packages, initialPackage, initialZip, initialPro
                 </div>
                 {zipInfo && <p className="mt-3 flex items-center gap-2 text-sm font-semibold text-palm"><Icon name="check" className="h-4 w-4" />We serve {zipInfo.city}, {zipInfo.county}</p>}
                 </div>
-                <AddressMap pin={pin} label={[d.address, d.city, d.zip].filter(Boolean).join(", ")} />
+                <AddressMap pin={pin} notFound={pinMissing} label={[d.address, d.city, d.zip].filter(Boolean).join(", ")} />
                 </div>
 
                 <p className="label mt-8">Vehicle size</p>

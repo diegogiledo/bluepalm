@@ -170,23 +170,38 @@ export async function locate(address: string | null, city: string): Promise<{ la
   } catch { return null; }
 }
 
+/** One OpenStreetMap search, spaced ≥1 s apart (Nominatim usage policy). */
+async function nominatim(params: Record<string, string>) {
+  const wait = lastNominatim + 1100 - Date.now();
+  if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+  lastNominatim = Date.now();
+  const res = await fetch(`https://nominatim.openstreetmap.org/search?${new URLSearchParams({ format: "jsonv2", addressdetails: "1", limit: "3", countrycodes: "us", ...params })}`, {
+    signal: AbortSignal.timeout(TIMEOUT), headers: { "User-Agent": UA, "Accept-Language": "en" }, next: { revalidate: 86400 },
+  });
+  return res.ok ? ((await res.json()) as { lat: string; lon: string; address?: Record<string, string> }[]) : [];
+}
+
 /**
- * Map position for an address the customer has entered (picked or typed):
- * Census first, then county records (new streets), then the town centre.
- * `exact` is false when only the town could be found.
+ * Exact map position for the address the customer entered (picked or typed).
+ * Tries, in order: U.S. Census, county address records (new streets), then
+ * OpenStreetMap. Only an exact house match counts. If none of them know the
+ * address, returns null rather than guessing a nearby spot.
  */
-export async function geocode(line1: string, city: string, zip: string): Promise<{ lat: number; lon: number; exact: boolean } | null> {
-  if (/^\s*\d/.test(line1)) {
-    try {
-      const m = await census(`${line1}, ${city}, FL ${zip}`);
-      if (m[0]) return { lat: m[0].coordinates.y, lon: m[0].coordinates.x, exact: true };
-    } catch {}
-    try {
-      const hits = await searchCounties(line1);
-      const best = hits.find((h) => h.zip === zip && h.lat != null && normAddr(h.line1) === normAddr(line1)) ?? hits.find((h) => h.zip === zip && h.lat != null);
-      if (best?.lat != null && best.lon != null) return { lat: best.lat, lon: best.lon, exact: true };
-    } catch {}
-  }
-  const town = await locate(null, city || zip);
-  return town ? { ...town, exact: false } : null;
+export async function geocode(line1: string, city: string, zip: string): Promise<{ lat: number; lon: number; exact: true } | null> {
+  const num = line1.match(/^\s*(\d+)/)?.[1];
+  if (!num) return null;
+  try {
+    const m = await census(`${line1}, ${city}, FL ${zip}`);
+    if (m[0]) return { lat: m[0].coordinates.y, lon: m[0].coordinates.x, exact: true };
+  } catch {}
+  try {
+    const hit = (await searchCounties(line1)).find((h) => h.lat != null && h.lon != null && normAddr(h.line1) === normAddr(line1) && (!zip || h.zip === zip));
+    if (hit) return { lat: hit.lat!, lon: hit.lon!, exact: true };
+  } catch {}
+  try {
+    const hits = await nominatim({ street: line1, city, state: "Florida", postalcode: zip });
+    const house = hits.find((h) => h.address?.house_number === num);
+    if (house) return { lat: Number(house.lat), lon: Number(house.lon), exact: true };
+  } catch {}
+  return null;
 }
