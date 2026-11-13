@@ -56,25 +56,43 @@ function parse(q: string) {
 /** How many of the typed words appear in a result (street words, city…). */
 const score = (words: string[], text: string) => { const t = ` ${normAddr(text)} `; return words.filter((w) => t.includes(` ${SUFFIX[w] ?? w} `) || t.includes(` ${SUFFIX[w] ?? w}`)).length; };
 
+/** The point a fraction `t` (0–1) of the way along a polyline of [lon, lat] points. */
+function alongPath(path: number[][] | undefined, t: number): [number, number] | null {
+  if (!path?.length) return null;
+  if (path.length === 1) return [path[0][0], path[0][1]];
+  const seg = path.slice(1).map((pt, i) => Math.hypot(pt[0] - path[i][0], pt[1] - path[i][1]));
+  let left = Math.max(0, Math.min(1, t)) * seg.reduce((s, x) => s + x, 0);
+  for (let i = 0; i < seg.length; i++) {
+    if (left <= seg[i] || i === seg.length - 1) {
+      const f = seg[i] ? Math.min(1, left / seg[i]) : 0;
+      return [path[i][0] + (path[i + 1][0] - path[i][0]) * f, path[i][1] + (path[i + 1][1] - path[i][1]) * f];
+    }
+    left -= seg[i];
+  }
+  return null;
+}
+
 export async function searchCounties(q: string): Promise<CountyAddress[]> {
   const p = parse(q);
   if (!p) return [];
   const points = POINTS.map(async (s) => {
-    const rows = await arcgis(s.url, { where: `UPPER(${s.addr}) LIKE '${p.num} %${p.main}%'`, outFields: `${s.addr},${s.zip},${s.city}`, returnGeometry: "false", resultRecordCount: "40" });
-    return rows.map((r) => ({ line1: title(stripUnit(r.attributes[s.addr] ?? "")), city: title(r.attributes[s.city] ?? ""), zip: (r.attributes[s.zip] ?? "").slice(0, 5), county: s.county }));
+    const rows = await arcgis(s.url, { where: `UPPER(${s.addr}) LIKE '${p.num} %${p.main}%'`, outFields: `${s.addr},${s.zip},${s.city}`, returnGeometry: "true", outSR: "4326", resultRecordCount: "40" });
+    return rows.map((r) => ({ line1: title(stripUnit(r.attributes[s.addr] ?? "")), city: title(r.attributes[s.city] ?? ""), zip: (r.attributes[s.zip] ?? "").slice(0, 5), county: s.county, lat: r.geometry?.y, lon: r.geometry?.x }));
   });
   const manatee = (async () => {
     const n = Number(p.num);
     const rows = await arcgis(MANATEE_STREETS, {
-      where: `UPPER(STREET_NAME) LIKE '%${p.main}%'`, returnGeometry: "false", resultRecordCount: "400",
+      where: `UPPER(STREET_NAME) LIKE '%${p.main}%'`, returnGeometry: "true", outSR: "4326", resultRecordCount: "400",
       outFields: "STREET_NAME,FRADDL,TOADDL,FRADDR,TOADDR,ZIPL,ZIPR,POSTAL_COMM_L,POSTAL_COMM_R",
     });
     const out: CountyAddress[] = [];
-    for (const { attributes: a } of rows) {
+    for (const { attributes: a, geometry: g } of rows) {
       for (const side of ["L", "R"] as const) {
         const from = Number(a[`FRADD${side}`]), to = Number(a[`TOADD${side}`]);
         if (!from || !to || n < Math.min(from, to) || n > Math.max(from, to) || (from % 2) !== (n % 2)) continue;
-        out.push({ line1: `${p.num} ${title(a.STREET_NAME ?? "")}`, city: title(a[`POSTAL_COMM_${side}`] ?? ""), zip: (a[`ZIP${side}`] ?? "").slice(0, 5), county: "Manatee" });
+        // place the house along the street segment in proportion to its number
+        const at = alongPath(g?.paths?.[0], from === to ? 0.5 : (n - from) / (to - from));
+        out.push({ line1: `${p.num} ${title(a.STREET_NAME ?? "")}`, city: title(a[`POSTAL_COMM_${side}`] ?? ""), zip: (a[`ZIP${side}`] ?? "").slice(0, 5), county: "Manatee", lat: at?.[1], lon: at?.[0] });
       }
     }
     return out;

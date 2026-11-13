@@ -17,7 +17,7 @@ import { nearestCountyAddress, nearestManateeStreet, normAddr, searchCounties } 
  *
  * Every outside call has a short time limit so the form never hangs.
  */
-export type Suggestion = { id: string; label: string; line1?: string; city?: string; zip?: string; state?: string };
+export type Suggestion = { id: string; label: string; line1?: string; city?: string; zip?: string; state?: string; lat?: number; lon?: number };
 export type Address = { line1: string; city: string; zip: string; state: string };
 
 const GOOGLE = process.env.GOOGLE_MAPS_API_KEY;
@@ -84,12 +84,12 @@ export async function suggest(q: string, session: string): Promise<Suggestion[]>
   matches.sort((a, b) => Math.hypot(a.coordinates.y - BIAS.lat, a.coordinates.x - BIAS.lon) - Math.hypot(b.coordinates.y - BIAS.lat, b.coordinates.x - BIAS.lon));
   const seen = new Set<string>();
   const out: Suggestion[] = [];
-  for (const a of [...county.map((c) => ({ ...c, state: "FL" })), ...matches.map(fromCensus)]) {
+  for (const a of [...county.map((c) => ({ ...c, state: "FL" })), ...matches.map((m) => ({ ...fromCensus(m), lat: m.coordinates.y, lon: m.coordinates.x }))] as (Address & { lat?: number; lon?: number })[]) {
     const key = normAddr(a.line1);
     if (seen.has(key)) continue;
     seen.add(key);
     const label = `${a.line1}, ${a.city}, FL ${a.zip}`;
-    out.push({ id: label, label, line1: a.line1, city: a.city, zip: a.zip, state: "FL" });
+    out.push({ id: label, label, line1: a.line1, city: a.city, zip: a.zip, state: "FL", lat: a.lat, lon: a.lon });
   }
   return out.slice(0, 6);
 }
@@ -168,4 +168,25 @@ export async function locate(address: string | null, city: string): Promise<{ la
     cityCache.set(key, out);
     return out;
   } catch { return null; }
+}
+
+/**
+ * Map position for an address the customer has entered (picked or typed):
+ * Census first, then county records (new streets), then the town centre.
+ * `exact` is false when only the town could be found.
+ */
+export async function geocode(line1: string, city: string, zip: string): Promise<{ lat: number; lon: number; exact: boolean } | null> {
+  if (/^\s*\d/.test(line1)) {
+    try {
+      const m = await census(`${line1}, ${city}, FL ${zip}`);
+      if (m[0]) return { lat: m[0].coordinates.y, lon: m[0].coordinates.x, exact: true };
+    } catch {}
+    try {
+      const hits = await searchCounties(line1);
+      const best = hits.find((h) => h.zip === zip && h.lat != null && normAddr(h.line1) === normAddr(line1)) ?? hits.find((h) => h.zip === zip && h.lat != null);
+      if (best?.lat != null && best.lon != null) return { lat: best.lat, lon: best.lon, exact: true };
+    } catch {}
+  }
+  const town = await locate(null, city || zip);
+  return town ? { ...town, exact: false } : null;
 }

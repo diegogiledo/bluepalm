@@ -1,10 +1,11 @@
 "use client";
 import Link from "next/link";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { VEHICLES, TIME_WINDOWS, FREQUENCIES, POLICIES, PROMOS } from "@/lib/config";
 import { Icon } from "./home/hero";
 import { AddressAutocomplete, type PickedAddress } from "./address-autocomplete";
+import { AddressMap, type Pin } from "./address-map";
 import { CardField, cardsEnabled, type CardHandle } from "./card-field";
 
 type Pkg = { id: string; name: string; base_price: number; tagline: string; features: string[] };
@@ -44,6 +45,22 @@ export function BookingWizard({ packages, initialPackage, initialZip, initialPro
   const cardRef = useRef<CardHandle>(null);
   const [locating, setLocating] = useState(false);
   const [locNote, setLocNote] = useState("");
+  const [pin, setPin] = useState<Pin | null>(null); // where the car is, for the map
+
+  // keep the map pin in step with the address: look it up when it's typed or edited
+  const pinFor = useRef("");
+  useEffect(() => {
+    const key = `${d.address.trim()}|${d.city.trim()}|${d.zip}`;
+    if (!/^\d+\s+\S{2,}/.test(d.address.trim()) || !/^\d{5}$/.test(d.zip) || key === pinFor.current) return;
+    const t = setTimeout(async () => {
+      pinFor.current = key;
+      try {
+        const j = await (await fetch(`/api/address?geo=1&line1=${encodeURIComponent(d.address)}&city=${encodeURIComponent(d.city)}&zip=${d.zip}`, { signal: AbortSignal.timeout(10000) })).json();
+        if (j.point) setPin(j.point);
+      } catch {}
+    }, 700);
+    return () => clearTimeout(t);
+  }, [d.address, d.city, d.zip]);
 
   async function checkZipNow(zip: string) {
     try {
@@ -52,8 +69,11 @@ export function BookingWizard({ packages, initialPackage, initialZip, initialPro
       else setErrors((e) => ({ ...e, zip: "Sorry — we don't serve this ZIP code yet." }));
     } catch {}
   }
-  function applyAddress(a: PickedAddress) {
+  function applyAddress(a: PickedAddress, at?: { lat: number; lon: number }) {
     setD((x) => ({ ...x, address: a.line1, city: a.city || x.city, zip: a.zip || x.zip }));
+    // the picked suggestion (or the phone's GPS) already knows where it is
+    const p = at ?? (a.lat != null && a.lon != null ? { lat: a.lat, lon: a.lon } : null);
+    if (p) { setPin({ ...p, exact: true }); pinFor.current = `${a.line1.trim()}|${(a.city || d.city).trim()}|${a.zip || d.zip}`; }
     setErrors((e) => ({ ...e, address: "", city: "", zip: "" }));
     setZipInfo(null);
     if (/^\d{5}$/.test(a.zip)) checkZipNow(a.zip);
@@ -65,7 +85,7 @@ export function BookingWizard({ packages, initialPackage, initialZip, initialPro
     navigator.geolocation.getCurrentPosition(async (pos) => {
       try {
         const j = await (await fetch(`/api/address?lat=${pos.coords.latitude}&lon=${pos.coords.longitude}`, { signal: AbortSignal.timeout(10000) })).json();
-        if (j.address) applyAddress(j.address);
+        if (j.address) applyAddress(j.address, { lat: pos.coords.latitude, lon: pos.coords.longitude });
         else setLocNote("We couldn't find an address here. Please type it instead.");
       } catch { setLocNote("Couldn't look up your address. Please type it instead."); }
       setLocating(false);
@@ -241,7 +261,9 @@ export function BookingWizard({ packages, initialPackage, initialZip, initialPro
                     {locating ? "Finding you…" : "Use my current location"}
                   </button>
                 </div>
-                <div className="mt-1.5" aria-labelledby="addr-label">
+                <div className="mt-1.5 grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)]">
+                <div>
+                <div aria-labelledby="addr-label">
                   <AddressAutocomplete value={d.address} invalid={Boolean(errors.address)}
                     onChange={(v) => { set("address", v); setLocNote(""); }}
                     onPick={(a) => applyAddress(a)} />
@@ -258,6 +280,9 @@ export function BookingWizard({ packages, initialPackage, initialZip, initialPro
                   </Field>
                 </div>
                 {zipInfo && <p className="mt-3 flex items-center gap-2 text-sm font-semibold text-palm"><Icon name="check" className="h-4 w-4" />We serve {zipInfo.city}, {zipInfo.county}</p>}
+                </div>
+                <AddressMap pin={pin} label={[d.address, d.city, d.zip].filter(Boolean).join(", ")} />
+                </div>
 
                 <p className="label mt-8">Vehicle size</p>
                 <div className="grid grid-cols-3 gap-3">

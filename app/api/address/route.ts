@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
-import { details, geoProvider, reverse, searchable, suggest } from "@/lib/geo";
+import { details, geocode, geoProvider, reverse, searchable, suggest } from "@/lib/geo";
 import { rateLimit } from "@/lib/rate-limit";
 
 // GET /api/address?q=...            → suggestions while typing
 // GET /api/address?id=...           → full address for a suggestion (Google only)
 // GET /api/address?lat=..&lon=..    → address for "Use my current location"
+// GET /api/address?geo=1&line1=..&city=..&zip=.. → map position for an address
 export async function GET(req: Request) {
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
   if (!rateLimit(`addr:${ip}`, 120, 10 * 60_000)) return NextResponse.json({ error: "Too many lookups. Please type your address." }, { status: 429 });
@@ -16,6 +17,10 @@ export async function GET(req: Request) {
     if (q !== undefined) {
       if (!searchable(q) || q.length > 120) return NextResponse.json({ suggestions: [], provider: geoProvider, needsNumber: !/^\s*\d/.test(q) }, { headers });
       return NextResponse.json({ suggestions: await suggest(q, session), provider: geoProvider }, { headers });
+    }
+    if (sp.get("geo")) {
+      const line1 = (sp.get("line1") ?? "").slice(0, 160), city = (sp.get("city") ?? "").slice(0, 80), zip = (sp.get("zip") ?? "").slice(0, 5);
+      return NextResponse.json({ point: await geocode(line1, city, zip) }, { headers });
     }
     const id = sp.get("id");
     if (id) return NextResponse.json({ address: await details(id.slice(0, 300), session) }, { headers });

@@ -2,8 +2,8 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 
-export type PickedAddress = { line1: string; city: string; zip: string };
-type Suggestion = { id: string; label: string; line1?: string; city?: string; zip?: string };
+export type PickedAddress = { line1: string; city: string; zip: string; lat?: number; lon?: number };
+type Suggestion = { id: string; label: string; line1?: string; city?: string; zip?: string; lat?: number; lon?: number };
 
 /**
  * Street-address input with type-ahead suggestions (accessible combobox).
@@ -55,7 +55,7 @@ export function AddressAutocomplete({ value, onChange, onPick, invalid }: {
 
   async function pick(s: Suggestion) {
     setOpen(false); skipNext.current = true;
-    if (s.line1 !== undefined) { onPick({ line1: s.line1, city: s.city ?? "", zip: s.zip ?? "" }); return; }
+    if (s.line1 !== undefined) { onPick({ line1: s.line1, city: s.city ?? "", zip: s.zip ?? "", lat: s.lat, lon: s.lon }); return; }
     onChange(s.label.split(",")[0]);
     try {
       const j = await (await fetch(`/api/address?id=${encodeURIComponent(s.id)}&s=${session.current}`)).json();
