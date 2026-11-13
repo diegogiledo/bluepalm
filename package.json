@@ -5,7 +5,10 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "postinstall": "node scripts/copy-map-worker.mjs",
+    "predev": "node scripts/copy-map-worker.mjs",
+    "prebuild": "node scripts/copy-map-worker.mjs"
   },
   "dependencies": {
     "@stripe/react-stripe-js": "^7.0.1",
@@ -14,6 +17,7 @@
     "framer-motion": "^14.9.0",
     "leaflet": "^1.9.4",
     "leaflet.markercluster": "^1.5.3",
+    "maplibre-gl": "^6.16.0",
     "next": "16.4.5",
     "react": "19.3.0",
     "react-dom": "19.3.0",

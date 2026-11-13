@@ -43,3 +43,6 @@ next-env.d.ts
 
 # local dev database & uploads
 /data
+
+# copied from node_modules on install
+/public/vendor/maplibre-gl-worker.mjs
