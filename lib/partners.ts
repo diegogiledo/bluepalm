@@ -1,8 +1,8 @@
 import "server-only";
 import { db, one } from "./db";
 import { newId, newToken } from "./auth";
-import { escapeHtml, mailingAddress, partnerFooterHtml, partnerFooterText, sendEmail, sendPartnerEmails, siteUrl } from "./notify";
-import { commissionFor, money, now, publicDetailerName, todayFL, vehicleLabel, windowLabel } from "./services";
+import { escapeHtml, logEmail, mailingAddress, partnerFooterHtml, partnerFooterText, sendEmail, sendPartnerEmails, siteUrl } from "./notify";
+import { addMessage, commissionFor, money, now, publicDetailerName, todayFL, vehicleLabel, windowLabel } from "./services";
 import { amountDue } from "./pricing";
 import { locate } from "./geo";
 import { COUNTIES } from "./config";
@@ -20,6 +20,14 @@ import type { Booking, Detailer, JobOffer, MarketDetailer } from "./types";
 
 const unsubUrl = (md: MarketDetailer) => siteUrl(`/api/partners/unsubscribe?t=${encodeURIComponent(md.token)}`);
 const validEmail = (e: string | null): e is string => Boolean(e && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
+
+/**
+ * Local test mode (your computer only, never on Netlify): job emails to
+ * detailers are only logged in the Outbox, and a random detailer serving the
+ * county "accepts" each paid booking right away, so the whole flow can be
+ * tried without emailing real businesses.
+ */
+export const detailerTestMode = () => !process.env.NETLIFY && !process.env.VERCEL && process.env.NODE_ENV !== "production";
 
 /** Job emails need a postal address in the footer (CAN-SPAM). */
 export const canEmailPartners = () => Boolean(mailingAddress());
@@ -96,7 +104,8 @@ export async function jobEmail(b: Booking, m: Pick<MarketDetailer, "business_nam
  */
 export async function offerJob(b: Booking) {
   try {
-    if (!canEmailPartners() || !b.payment_method_id) return 0;
+    const test = detailerTestMode();
+    if ((!canEmailPartners() && !test) || !b.payment_method_id) return 0;
     if ((await db.select("job_offers", { booking_id: b.id })).length) return 0; // already offered
     const zip = await one("service_zips", { zip: b.zip });
     if (!zip) return 0;
@@ -109,6 +118,12 @@ export async function offerJob(b: Booking) {
       const j = await jobEmail(b, m, siteUrl(`/jobs/${offers[i].token}`), unsub);
       return { to: m.email!, title: j.subject, html: j.html, text: j.text, unsubscribeUrl: unsub };
     }));
+    if (test) {
+      for (const m of mails) await logEmail(m.to, m.title, m.text);
+      const pick = offers[Math.floor(Math.random() * offers.length)];
+      await acceptOffer(pick.token, { simulated: true });
+      return 0;
+    }
     return await sendPartnerEmails(mails);
   } catch (e) {
     console.error("offerJob failed", e);
@@ -142,7 +157,7 @@ async function detailerFor(m: MarketDetailer): Promise<Detailer> {
 export type AcceptResult = { ok: true; token: string } | { ok: false; reason: "taken" | "closed" | "invalid" };
 
 /** First partner to accept wins: the booking is claimed with a conditional update. */
-export async function acceptOffer(token: string): Promise<AcceptResult> {
+export async function acceptOffer(token: string, opts: { simulated?: boolean } = {}): Promise<AcceptResult> {
   const offer = await one("job_offers", { token });
   if (!offer) return { ok: false, reason: "invalid" };
   const [b, m] = await Promise.all([one("bookings", { id: offer.booking_id }), one("market_detailers", { id: offer.market_detailer_id })]);
@@ -167,7 +182,11 @@ export async function acceptOffer(token: string): Promise<AcceptResult> {
     if (o.id !== offer.id && o.status === "sent") await db.update("job_offers", { id: o.id }, { status: "taken" });
   }
   const portal = siteUrl(`/detailer/enter?token=${d.access_token}`);
-  await sendEmail(d.email, `You got the job: ${b.ref} on ${b.date}`, [
+  const toDetailer = opts.simulated
+    ? (to: string, title: string, lines: string[]) => logEmail(to, title, lines.join("\n\n"))
+    : (to: string, title: string, lines: string[], cta?: { label: string; url: string }) => sendEmail(to, title, lines, cta);
+  if (opts.simulated) await addMessage(b.id, "admin", `Test mode: ${m.business_name} was picked at random to accept this job. No email was sent to them.`);
+  await toDetailer(d.email, `You got the job: ${b.ref} on ${b.date}`, [
     `${b.package_name} · ${vehicleLabel(b.vehicle)} · ${b.date}, ${windowLabel(b.time_window)} in ${b.city}.`,
     "Open your BluePalm portal for the exact address, instructions and to message the customer. Mark the job complete there when you're done; the customer's card is charged then.",
     d.stripe_account_id ? "" : "To get paid automatically, tap \"Set up payouts with Stripe\" in your portal (about 5 minutes, once).",

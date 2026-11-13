@@ -75,7 +75,7 @@ export default async function BookingDetail({ params }: PageProps<"/admin/bookin
               <label className="text-sm font-semibold">Assign detailer manually
                 <select name="detailer_id" defaultValue={b.detailer_id ?? ""} className="input mt-1 py-2">
                   <option value="">— Unassigned (open to detailers) —</option>
-                  {eligible.map((d) => <option key={d.id} value={d.id}>{d.name}{d.id === b.preferred_detailer_id ? " (customer preferred)" : ""}{!(d.onboarding.insurance_verified && d.onboarding.background_check) ? " — verification incomplete" : ""}</option>)}
+                  {eligible.map((d) => <option key={d.id} value={d.id}>{d.source === "market" ? `${d.business_name || d.name} (local business)` : d.name}{d.id === b.preferred_detailer_id ? " (customer preferred)" : ""}{d.source !== "market" && !(d.onboarding.insurance_verified && d.onboarding.background_check) ? " — verification incomplete" : ""}</option>)}
                 </select></label>
               <Submit className="btn-primary btn-sm">Save</Submit>
               {!eligible.length && <p className="w-full text-xs text-ink-muted">No approved detailers cover {zip?.county ?? "this area"} yet.</p>}

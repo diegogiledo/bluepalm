@@ -104,3 +104,9 @@ export async function sendPartnerEmails(items: PartnerEmail[]): Promise<number> 
   }
   return ok;
 }
+
+/** Record an email in the outbox without sending it (local test mode). */
+export async function logEmail(to: string, title: string, text: string) {
+  console.info(`[email:test-mode, not sent] to=${to} subject="${title}"`);
+  await record("email", to, `[TEST, not sent] ${title}`, text, "logged");
+}
