@@ -104,8 +104,18 @@ create table if not exists job_offers (
 create index if not exists job_offers_booking_idx on job_offers(booking_id);
 create index if not exists job_offers_detailer_idx on job_offers(market_detailer_id);
 
+create table if not exists expenses (
+  id uuid primary key,
+  month text not null check (month ~ '^\d{4}-\d{2}$'),
+  category text not null,
+  amount numeric(12,2) not null check (amount >= 0),
+  note text not null default '',
+  created_at timestamptz not null default now()
+);
+create index if not exists expenses_month_idx on expenses(month);
+
 do $$ declare t text; begin
-  foreach t in array array['packages','service_zips','settings','staff','customers','detailers','recurring_plans','bookings','messages','outbox','market_detailers','job_offers'] loop
+  foreach t in array array['packages','service_zips','settings','staff','customers','detailers','recurring_plans','bookings','messages','outbox','market_detailers','job_offers','expenses'] loop
     execute format('alter table %I enable row level security', t);
   end loop;
 end $$;

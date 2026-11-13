@@ -75,9 +75,12 @@ export type Outbox = {
 export type StaffRole = "admin" | "dispatcher";
 export type Staff = { email: string; role: StaffRole; name: string };
 
+/** A monthly operating expense entered in the Finance tab (for EBITDA). */
+export type Expense = { id: string; month: string; category: string; amount: number; note: string; created_at: string };
+
 export type Tables = {
   packages: Package; service_zips: ServiceZip; settings: Setting; customers: Customer;
   detailers: Detailer; bookings: Booking; recurring_plans: RecurringPlan; messages: Message;
-  outbox: Outbox; staff: Staff; market_detailers: MarketDetailer; job_offers: JobOffer;
+  outbox: Outbox; staff: Staff; market_detailers: MarketDetailer; job_offers: JobOffer; expenses: Expense;
 };
 export type TableName = keyof Tables;

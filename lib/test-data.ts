@@ -78,5 +78,92 @@ export async function deleteTestData() {
     await db.remove("recurring_plans", { customer_id: c.id });
     await db.remove("customers", { id: c.id });
   }
+  for (const e of await db.select("expenses")) if (e.note.startsWith("[TEST]")) await db.remove("expenses", { id: e.id });
   return bookings.length;
+}
+
+/**
+ * Six months of finished test jobs (and test operating expenses) so the
+ * Overview and Finance charts have history. Volume grows month over month;
+ * jobs are completed, ~6% cancelled, a few partly refunded, about a third
+ * from returning customers, and a quarter of first bookings use WELCOME10.
+ * Payments are marked paid without contacting Stripe (fake test intents), so
+ * refunding these from admin will show a Stripe error, which is expected.
+ */
+export async function generateTestHistory(months = 6) {
+  if (!canMakeTestData()) throw new Error("Test data can only be made on your computer with Stripe test keys.");
+  const { newId, newToken } = await import("./auth");
+  const { detailerFor } = await import("./partners");
+  const [zips, packages, partners, rateSetting] = await Promise.all([
+    db.select("service_zips", { enabled: true }), db.select("packages", { active: true }), db.select("market_detailers"), db.select("settings", { key: "commission_rate" }),
+  ]);
+  const rate = Number(rateSetting[0]?.value ?? 0.2);
+  const live = partners.filter((m) => m.email && m.status !== "unsubscribed");
+  const usable = zips.filter((z) => live.some((m) => m.counties.includes(z.county)));
+  if (!usable.length) throw new Error("Load the researched detailers first.");
+  const weights = packages.map((p) => (p.base_price < 100 ? 45 : p.base_price < 200 ? 40 : 15));
+  const pkgPick = () => { let x = Math.random() * weights.reduce((a, b) => a + b, 0); for (let i = 0; i < packages.length; i++) { x -= weights[i]; if (x <= 0) return packages[i]; } return packages[0]; };
+  const SIZE_UP: Record<string, number> = { small: 0, medium: 0.1, large: 0.2 };
+  const accounts = new Map<string, string>(); // market detailer id -> portal detailer id
+  const pool: { id: string; email: string; name: string }[] = [];
+  const customers: import("./types").Customer[] = [], bookings: import("./types").Booking[] = [];
+  const today = todayFL();
+  const now = new Date(today + "T12:00");
+
+  for (let k = months; k >= 1; k--) {
+    const start = new Date(now.getFullYear(), now.getMonth() - k, 1);
+    const days = new Date(start.getFullYear(), start.getMonth() + 1, 0).getDate();
+    const count = Math.round(14 + (months - k) * 6 + Math.random() * 6); // grows each month
+    for (let i = 0; i < count; i++) {
+      const date = new Date(start.getFullYear(), start.getMonth(), 1 + Math.floor(Math.random() * days)).toISOString().slice(0, 10);
+      if (date >= today) continue;
+      let cust = pool.length > 8 && Math.random() < 0.33 ? pick(pool) : null;
+      const isNew = !cust;
+      if (!cust) {
+        const first = pick(FIRST), last = pick(LAST);
+        cust = { id: newId(), email: `${first}.${last}.${Math.floor(Math.random() * 1e6)}${TEST_DOMAIN}`.toLowerCase(), name: `${first} ${last} (test)` };
+        pool.push(cust);
+        customers.push({ id: cust.id, email: cust.email, name: cust.name, phone: `813555${1000 + Math.floor(Math.random() * 8999)}`, access_token: newToken(), loyalty_points: 0, created_at: addDays(date, -5) + "T12:00:00.000Z" });
+      }
+      const z = pick(usable), pkg = pkgPick(), vehicle = pick(VEHICLES).id;
+      const m = pick(live.filter((p) => p.counties.includes(z.county)));
+      let detailerId = accounts.get(m.id);
+      if (!detailerId) { detailerId = (await detailerFor(m)).id; accounts.set(m.id, detailerId); }
+      const cancelled = Math.random() < 0.06;
+      const final = Math.round(pkg.base_price * (1 + (SIZE_UP[vehicle] ?? 0)));
+      const promo = isNew && Math.random() < 0.25;
+      const due = Math.round(final * (promo ? 0.9 : 1) * 100) / 100;
+      const refund = !cancelled && Math.random() < 0.04 ? Math.round(due * (Math.random() < 0.5 ? 0.5 : 1)) : 0;
+      bookings.push({
+        id: newId(), ref: `BP-${Math.random().toString(16).slice(2, 8).toUpperCase()}`, customer_id: cust.id,
+        zip: z.zip, address: `${100 + Math.floor(Math.random() * 9800)} ${pick(STREETS)}`, city: z.city, vehicle, vehicle_details: "",
+        package_id: pkg.id, package_name: pkg.name, price_estimate: pkg.base_price, date, time_window: pick(TIME_WINDOWS).id,
+        preferred_detailer_id: null, instructions: "[TEST DATA] Past booking for testing.",
+        status: cancelled ? "cancelled" : "completed", detailer_id: cancelled ? null : detailerId, recurring_plan_id: null,
+        commission_rate: rate, final_price: cancelled ? null : final,
+        payment_status: cancelled ? "card_on_file" : refund >= due ? "refunded" : refund ? "partially_refunded" : "paid", refund_amount: refund,
+        promo_code: promo ? "WELCOME10" : null, discount_pct: promo ? 10 : 0,
+        stripe_customer_id: "cus_test_history", payment_method_id: "pm_test_history", card_label: "Visa •••• 4242 (test)", payment_error: null,
+        payment_intent: cancelled ? null : `pi_test_history_${newToken(6)}`, checkout_url: null,
+        cancel_reason: cancelled ? "Cancelled by customer (test)" : "",
+        customer_rating: !cancelled && Math.random() < 0.7 ? (Math.random() < 0.75 ? 5 : 4) : null, customer_feedback: "",
+        created_at: addDays(date, -(1 + Math.floor(Math.random() * 9))) + "T14:00:00.000Z",
+        completed_at: cancelled ? null : date + "T16:00:00.000Z",
+      });
+    }
+  }
+  await db.insertMany("customers", customers);
+  await db.insertMany("bookings", bookings);
+
+  // test operating expenses, one set per month, so EBITDA has something to subtract
+  const expenses: import("./types").Expense[] = [];
+  for (let k = months; k >= 1; k--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - k, 1), month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const grow = months - k;
+    for (const [category, amount] of [["Marketing", 350 + grow * 120 + Math.random() * 150], ["Software", 129], ["Insurance", 95], ["Office & admin", 60 + Math.random() * 80]] as const) {
+      expenses.push({ id: newId(), month, category, amount: Math.round(Number(amount)), note: "[TEST] sample expense", created_at: new Date().toISOString() });
+    }
+  }
+  await db.insertMany("expenses", expenses);
+  return { bookings: bookings.length, completed: bookings.filter((b) => b.status === "completed").length, expenses: expenses.length };
 }

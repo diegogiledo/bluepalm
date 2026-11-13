@@ -12,7 +12,7 @@ import { COUNTIES } from "@/lib/config";
 import { canEmailPartners } from "@/lib/partners";
 import { canMakeTestData } from "@/lib/test-data";
 import type { MarketDetailer } from "@/lib/types";
-import { addPartner, deletePartner, importResearchedPartners, makeTestBookings, reviewDetailer, wipeTestBookings, setPartnerStatus, updateDetailer, updatePartner } from "../../actions";
+import { addPartner, deletePartner, importResearchedPartners, makeTestBookings, makeTestHistory, reviewDetailer, wipeTestBookings, setPartnerStatus, updateDetailer, updatePartner } from "../../actions";
 
 async function SignedUp() {
   const staff = await requireStaff();
@@ -175,6 +175,7 @@ export default async function Detailers({ searchParams }: PageProps<"/admin/deta
                   <select name="count" defaultValue="10" className="input w-auto py-1.5">{[5, 10, 20, 30].map((n) => <option key={n} value={n}>{n} bookings</option>)}</select>
                   <Submit className="btn-primary btn-sm" pending="Making bookings…">Generate test bookings</Submit>
                 </StateForm>
+                <StateForm action={makeTestHistory}><Submit className="btn-primary btn-sm" pending="Adding history…">Add 6 months of past bookings</Submit></StateForm>
                 <StateForm action={wipeTestBookings}><Submit className="btn-ghost btn-sm" pending="Deleting…">Delete all test bookings</Submit></StateForm>
               </div>
             </div>

@@ -15,6 +15,7 @@ const NAV = [
   { href: "/admin/customers", label: "Customers" },
   { href: "/admin/recurring", label: "Recurring" },
   { href: "/admin/detailers", label: "Detailers" },
+  { href: "/admin/finance", label: "Finance", admin: true },
   { href: "/admin/areas", label: "Service areas", admin: true },
   { href: "/admin/settings", label: "Pricing & commission", admin: true },
   { href: "/admin/outbox", label: "Notifications", admin: true },

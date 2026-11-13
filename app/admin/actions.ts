@@ -358,3 +358,32 @@ export async function wipeTestBookings(_: PartnerState): Promise<PartnerState> {
     return { ok: n ? `Deleted ${n} test bookings.` : "No test bookings to delete." };
   } catch (e) { return { error: String((e as Error).message ?? e) }; }
 }
+
+export async function makeTestHistory(_: PartnerState): Promise<PartnerState> {
+  await requireStaff(["admin"]);
+  const { canMakeTestData, generateTestHistory } = await import("@/lib/test-data");
+  if (!canMakeTestData()) return { error: "Test data can only be made on your computer with Stripe test keys." };
+  try {
+    const r = await generateTestHistory(6);
+    revalidatePath("/admin", "layout");
+    return { ok: `Added ${r.bookings} past bookings (${r.completed} completed) and ${r.expenses} test expenses over the last 6 months.` };
+  } catch (e) { return { error: String((e as Error).message ?? e) }; }
+}
+
+// ---------- finance: operating expenses ----------
+export async function addExpense(_: PartnerState, form: FormData): Promise<PartnerState> {
+  await requireStaff(["admin"]);
+  const month = str(form, "month"), category = str(form, "category").slice(0, 40), amount = num(form, "amount");
+  if (!/^\d{4}-\d{2}$/.test(month)) return { error: "Pick a month." };
+  if (!category) return { error: "Pick a category." };
+  if (!(amount >= 0) || amount > 1e7) return { error: "Enter an amount." };
+  const { newId } = await import("@/lib/auth");
+  await db.insert("expenses", { id: newId(), month, category, amount: Math.round(amount * 100) / 100, note: str(form, "note").slice(0, 120), created_at: new Date().toISOString() });
+  revalidatePath("/admin/finance");
+  return { ok: `Added ${category} for ${month}.` };
+}
+export async function deleteExpense(form: FormData) {
+  await requireStaff(["admin"]);
+  await db.remove("expenses", { id: str(form, "id") });
+  revalidatePath("/admin/finance");
+}

@@ -4,6 +4,8 @@ import { requireStaff } from "@/lib/auth";
 import { db, getSetting } from "@/lib/db";
 import { money, todayFL, vehicleLabel } from "@/lib/services";
 import { Badge, fmtDate } from "@/components/ui";
+import { monthlyRevenueProfit } from "@/lib/finance";
+import { RevenueProfitChart } from "@/components/admin/finance-charts";
 
 export default async function Overview({ searchParams }: PageProps<"/admin">) {
   const staff = await requireStaff();
@@ -21,10 +23,7 @@ export default async function Overview({ searchParams }: PageProps<"/admin">) {
   const unassigned = bookings.filter((b) => b.status === "confirmed" && b.date >= today);
   const cancelled = bookings.filter((b) => b.status === "cancelled").length;
 
-  // last 6 months revenue
-  const months = Array.from({ length: 6 }, (_, i) => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - (5 - i)); return d.toISOString().slice(0, 7); });
-  const byMonth = months.map((m) => ({ m, v: completed.filter((b) => (b.completed_at ?? b.date).startsWith(m)).reduce((s, b) => s + (amountDue(b) ?? 0), 0) }));
-  const max = Math.max(1, ...byMonth.map((x) => x.v));
+  const byMonth = await monthlyRevenueProfit(6);
 
   const tiles: [string, string, string?][] = [
     ["Awaiting confirmation", String(requested.length), "/admin/bookings?status=requested"],
@@ -54,16 +53,10 @@ export default async function Overview({ searchParams }: PageProps<"/admin">) {
 
       <div className="grid gap-6 xl:grid-cols-[1fr_1.4fr]">
         <section className="card p-6">
-          <h2 className="font-display text-lg font-bold">Completed revenue, last 6 months</h2>
-          <div className="mt-6 flex h-48 items-end gap-3">
-            {byMonth.map(({ m, v }) => (
-              <div key={m} className="flex flex-1 flex-col items-center gap-2">
-                <span className="text-xs font-semibold text-ink-muted">{v ? money(v) : ""}</span>
-                <div className="w-full rounded-t-lg bg-brand" style={{ height: `${Math.max(2, (v / max) * 140)}px`, opacity: v ? 1 : 0.15 }} />
-                <span className="text-xs text-ink-muted">{new Date(m + "-15").toLocaleDateString("en-US", { month: "short" })}</span>
-              </div>
-            ))}
-          </div>
+          <div className="flex items-center justify-between"><h2 className="font-display text-lg font-bold">Revenue and gross profit, last 6 months</h2>
+            {staff.role === "admin" && <Link href="/admin/finance" className="text-sm font-semibold text-brand">Finance →</Link>}</div>
+          <p className="mb-3 text-xs text-ink-muted">Revenue = what customers paid. Gross profit = BluePalm&apos;s commission minus Stripe fees.</p>
+          <RevenueProfitChart data={byMonth} />
         </section>
         <section className="card p-6">
           <div className="flex items-center justify-between"><h2 className="font-display text-lg font-bold">Requests to review</h2><Link href="/admin/bookings" className="text-sm font-semibold text-brand">All bookings →</Link></div>

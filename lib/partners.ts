@@ -135,7 +135,7 @@ export async function offerJob(b: Booking) {
 export const jobOpen = (b: Booking) => (b.status === "requested" || b.status === "confirmed") && !b.detailer_id && b.date >= todayFL();
 
 /** The portal account a partner uses after winning a job (created on first win). */
-async function detailerFor(m: MarketDetailer): Promise<Detailer> {
+export async function detailerFor(m: MarketDetailer): Promise<Detailer> {
   if (m.detailer_id) {
     const d = await one("detailers", { id: m.detailer_id });
     if (d) return d;
