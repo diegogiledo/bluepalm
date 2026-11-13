@@ -7,7 +7,7 @@ export const BRAND = {
   short: "BluePalm",
   tagline: "A cleaner car. Right at your door.",
   region: "Tampa Bay & Sarasota, Florida",
-  supportEmail: process.env.NEXT_PUBLIC_SUPPORT_EMAIL || "hello@bluepalmautocare.com",
+  supportEmail: process.env.NEXT_PUBLIC_SUPPORT_EMAIL || "hello@bluepalm.shop",
   siteUrl: process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000",
 };
 

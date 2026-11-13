@@ -39,7 +39,7 @@ export async function sendEmail(to: string, title: string, lines: string[], cta?
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        from: process.env.EMAIL_FROM || "BluePalm Auto Care <bookings@bluepalmautocare.com>",
+        from: process.env.EMAIL_FROM || "BluePalm Auto Care <bookings@bluepalm.shop>",
         to: [to], subject: title, html: emailHtml(title, lines, cta), text,
       }),
     });
@@ -89,7 +89,7 @@ export async function sendPartnerEmails(items: PartnerEmail[]): Promise<number> 
         method: "POST", signal: AbortSignal.timeout(15000),
         headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
         body: JSON.stringify(chunk.map((m) => ({
-          from: process.env.EMAIL_FROM || "BluePalm Auto Care <bookings@bluepalmautocare.com>",
+          from: process.env.EMAIL_FROM || "BluePalm Auto Care <bookings@bluepalm.shop>",
           to: [m.to], subject: m.title, text: textOf(m),
           html: m.html,
           headers: { "List-Unsubscribe": `<${m.unsubscribeUrl}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" },

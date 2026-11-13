@@ -124,5 +124,5 @@ end $$;
 insert into storage.buckets (id, name, public) values ('detailer-docs', 'detailer-docs', false) on conflict (id) do nothing;
 
 -- Staff: create the user in Supabase Auth (Authentication → Users), then:
--- insert into staff (email, role, name) values ('owner@bluepalmautocare.com', 'admin', 'Owner');
+-- insert into staff (email, role, name) values ('owner@bluepalm.shop', 'admin', 'Owner');
 -- Packages, launch ZIP codes and default settings are seeded automatically on first request.
