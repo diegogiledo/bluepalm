@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { VEHICLES, TIME_WINDOWS, FREQUENCIES, POLICIES, PROMOS } from "@/lib/config";
 import { Icon } from "./home/hero";
@@ -10,7 +10,7 @@ import { CardField, cardsEnabled, type CardHandle } from "./card-field";
 type Pkg = { id: string; name: string; base_price: number; tagline: string; features: string[] };
 type Data = {
   zip: string; address: string; city: string; vehicle: string; vehicle_details: string; package_id: string;
-  date: string; time_window: string; preferred_detailer_id: string; frequency: string;
+  date: string; time_window: string; frequency: string;
   name: string; email: string; phone: string; instructions: string; website: string; promo: string;
 };
 const STEPS = ["Your car", "Service & time", "Your details"];
@@ -28,13 +28,12 @@ export function BookingWizard({ packages, initialPackage, initialZip, initialPro
   const [d, setD] = useState<Data>({
     zip: initialZip ?? "", address: "", city: "", vehicle: "", vehicle_details: "",
     package_id: initialPackage && (packages.some((p) => p.id === initialPackage) || initialPackage === "custom") ? initialPackage : "",
-    date: "", time_window: "", preferred_detailer_id: "", frequency: "none",
+    date: "", time_window: "", frequency: "none",
     name: "", email: "", phone: "", instructions: "", website: "", promo: promo?.code ?? "",
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [zipInfo, setZipInfo] = useState<{ city: string; county: string } | null>(null);
   const [busy, setBusy] = useState(false);
-  const [detailers, setDetailers] = useState<{ id: string; label: string }[]>([]);
   const [done, setDone] = useState<{ ref: string; accountToken: string | null; promoStatus?: string; card?: string | null } | null>(null);
   const [formError, setFormError] = useState("");
 
@@ -74,11 +73,6 @@ export function BookingWizard({ packages, initialPackage, initialZip, initialPro
       setLocating(false);
     }, { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 });
   }
-
-  useEffect(() => {
-    if (step !== 1 || !/^\d{5}$/.test(d.zip)) return;
-    fetch(`/api/detailers-for-zip?zip=${d.zip}`).then((r) => r.json()).then((j) => setDetailers(j.detailers ?? [])).catch(() => setDetailers([]));
-  }, [step, d.zip]);
 
   async function validate(s: number): Promise<boolean> {
     const e: Record<string, string> = {};
@@ -136,7 +130,7 @@ export function BookingWizard({ packages, initialPackage, initialZip, initialPro
       }
       const r = await fetch("/api/bookings", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...d, preferred_detailer_id: d.preferred_detailer_id || null, setup_intent }),
+        body: JSON.stringify({ ...d, setup_intent }),
       });
       const j = await r.json();
       if (!r.ok) {
@@ -158,8 +152,8 @@ export function BookingWizard({ packages, initialPackage, initialZip, initialPro
   const summary = useMemo(() => [
     ["Your car", `${VEHICLES.find((v) => v.id === d.vehicle)?.label ?? ""}${d.vehicle_details ? ` (${d.vehicle_details})` : ""} · ${d.address}, ${d.city} ${d.zip}`, 0],
     ["Service", `${pkg ? `${pkg.name} · from $${pkg.base_price}` : d.package_id === "custom" ? "Custom quote" : ""}${promo && pkg ? ` · ${promo.code}: ${promo.pct}% off` : ""}`, 1],
-    ["When", `${d.date ? new Date(d.date + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }) : ""} · ${TIME_WINDOWS.find((t) => t.id === d.time_window)?.label ?? ""} · ${FREQUENCIES.find((f) => f.id === d.frequency)?.label ?? ""}${detailers.find((x) => x.id === d.preferred_detailer_id) ? ` · ${detailers.find((x) => x.id === d.preferred_detailer_id)!.label}` : ""}`, 1],
-  ] as [string, string, number][], [d, pkg, detailers]);
+    ["When", `${d.date ? new Date(d.date + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }) : ""} · ${TIME_WINDOWS.find((t) => t.id === d.time_window)?.label ?? ""} · ${FREQUENCIES.find((f) => f.id === d.frequency)?.label ?? ""}`, 1],
+  ] as [string, string, number][], [d, pkg]);
 
   if (done) {
     return (
@@ -292,12 +286,6 @@ export function BookingWizard({ packages, initialPackage, initialZip, initialPro
                 <div className="mt-8 grid gap-5 sm:grid-cols-2">
                   <Field label="Preferred date" error={errors.date}>
                     <input type="date" className="input" min={isoDay(1)} max={isoDay(120)} value={d.date} onChange={(e) => set("date", e.target.value)} />
-                  </Field>
-                  <Field label="Preferred detailer" hint={detailers.length ? undefined : "Detailer selection becomes available as detailers join your area."}>
-                    <select className="input" value={d.preferred_detailer_id} onChange={(e) => set("preferred_detailer_id", e.target.value)} disabled={!detailers.length}>
-                      <option value="">No preference</option>
-                      {detailers.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
-                    </select>
                   </Field>
                 </div>
                 <p className="label mt-6">Time window</p>

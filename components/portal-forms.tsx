@@ -41,3 +41,22 @@ export function RebookForm({ action, bookingId, minDate }: { action: Action; boo
     </form>
   );
 }
+
+/** Permanent delete with a confirm box; shows the server's reason if it refuses. */
+export function DeleteBookingForm({ action, id, blocked }: { action: Action; id: string; blocked?: string }) {
+  const [state, formAction] = useActionState(action, null);
+  return (
+    <form action={formAction} className="space-y-2 rounded-2xl border border-red-300 bg-red-50/50 p-4">
+      <input type="hidden" name="id" value={id} />
+      <b className="text-sm text-red-700">Delete booking</b>
+      <p className="text-xs text-ink-muted">Removes the booking and its messages for good. This can&apos;t be undone.</p>
+      {blocked ? <p className="text-xs font-semibold text-red-700">{blocked}</p> : (
+        <div className="flex flex-wrap items-center gap-3 text-sm">
+          <label className="flex items-center gap-2"><input type="checkbox" name="confirm" value="1" required className="accent-red-600" /> Yes, permanently delete it</label>
+          <Submit className="btn btn-sm bg-red-600 text-white hover:bg-red-700" pending="Deleting…">Delete</Submit>
+        </div>
+      )}
+      {state?.error && <p className="text-xs font-semibold text-red-700" role="alert">{state.error}</p>}
+    </form>
+  );
+}

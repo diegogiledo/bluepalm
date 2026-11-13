@@ -6,8 +6,8 @@ import { db, one } from "@/lib/db";
 import { commissionFor, money, vehicleLabel, windowLabel } from "@/lib/services";
 import { stripeEnabled } from "@/lib/stripe";
 import { Badge, Thread, fmtDate } from "@/components/ui";
-import { Submit } from "@/components/portal-forms";
-import { adminMessage, assignDetailer, cancelOrRefund, chargeCard, markPaid, sendPaymentLink, setBookingStatus, updatePricing } from "../../../actions";
+import { DeleteBookingForm, Submit } from "@/components/portal-forms";
+import { adminMessage, assignDetailer, cancelOrRefund, chargeCard, deleteBooking, markPaid, sendPaymentLink, setBookingStatus, updatePricing } from "../../../actions";
 
 export default async function BookingDetail({ params }: PageProps<"/admin/bookings/[id]">) {
   const staff = await requireStaff();
@@ -113,6 +113,8 @@ export default async function BookingDetail({ params }: PageProps<"/admin/bookin
             </div>
             {!isAdmin && <p className="text-xs text-ink-muted">Refunds require an administrator.</p>}
           </form>
+          {isAdmin && <DeleteBookingForm action={deleteBooking} id={b.id}
+            blocked={["paid", "partially_refunded"].includes(b.payment_status) ? "This booking has a payment that hasn't been fully refunded. Refund it first, then you can delete it." : undefined} />}
         </section>
 
         <section className="card p-6">

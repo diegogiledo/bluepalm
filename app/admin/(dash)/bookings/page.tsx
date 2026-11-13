@@ -22,6 +22,7 @@ export default async function Bookings({ searchParams }: PageProps<"/admin/booki
   return (
     <div className="space-y-6">
       <h1 className="font-display text-3xl font-extrabold">Bookings</h1>
+      {typeof sp.deleted === "string" && <p className="rounded-xl bg-palm/10 p-3 text-sm text-navy" role="status">Booking {sp.deleted.slice(0, 20)} was deleted.</p>}
       <div className="flex flex-wrap items-center gap-2">
         {FILTERS.map((f) => (
           <Link key={f} href={`/admin/bookings?status=${f}`} className={`rounded-full px-4 py-2 text-sm font-semibold capitalize ${status === f ? "bg-brand text-white" : "bg-white ring-1 ring-navy/10"}`}>

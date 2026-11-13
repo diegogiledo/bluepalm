@@ -136,6 +136,24 @@ export async function cancelOrRefund(form: FormData) {
   done(b.id);
 }
 
+/**
+ * Permanently delete a booking and its messages (admin only, must tick the
+ * confirm box). A booking that still holds a customer's money can't be
+ * deleted — refund it first, so no payment loses its record.
+ */
+export async function deleteBooking(_: unknown, form: FormData): Promise<{ error?: string } | null> {
+  await requireStaff(["admin"]);
+  const b = await one("bookings", { id: str(form, "id") });
+  if (!b) return { error: "This booking was already deleted." };
+  if (str(form, "confirm") !== "1") return { error: "Tick the box to confirm." };
+  if (b.payment_status === "paid" || b.payment_status === "partially_refunded")
+    return { error: "This booking has a payment that hasn't been fully refunded. Refund it first, then delete it." };
+  await db.remove("messages", { booking_id: b.id });
+  await db.remove("bookings", { id: b.id });
+  revalidatePath("/admin", "layout");
+  redirect("/admin/bookings?deleted=" + encodeURIComponent(b.ref));
+}
+
 export async function adminMessage(form: FormData) {
   await requireStaff();
   const b = await bookingOr404(str(form, "id"));
