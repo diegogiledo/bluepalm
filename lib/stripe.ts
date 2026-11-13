@@ -149,3 +149,9 @@ export async function chargeSavedCard(opts: {
     ...(opts.destination ? { application_fee_amount: opts.commissionCents, transfer_data: { destination: opts.destination } } : {}),
   }, `charge-${opts.bookingId}-${opts.amountCents}`);
 }
+
+/** Test mode only: give a Stripe test customer the standard test Visa (•••• 4242). */
+export async function attachTestCard(customer: string) {
+  if (!(process.env.STRIPE_SECRET_KEY ?? "").startsWith("sk_test_")) throw new Error("Test cards need Stripe test keys.");
+  return stripe<{ id: string }>("payment_methods/pm_card_visa/attach", { customer });
+}

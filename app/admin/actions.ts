@@ -335,3 +335,26 @@ export async function deletePartner(form: FormData) {
   await db.remove("market_detailers", { id });
   partnerDone();
 }
+
+// ---------- test data (your computer only) ----------
+export async function makeTestBookings(_: PartnerState, form: FormData): Promise<PartnerState> {
+  await requireStaff(["admin"]);
+  const { canMakeTestData, generateTestBookings } = await import("@/lib/test-data");
+  if (!canMakeTestData()) return { error: "Test data can only be made on your computer with Stripe test keys." };
+  const n = Math.min(Math.max(Math.round(num(form, "count")) || 10, 1), 30);
+  try {
+    const made = await generateTestBookings(n);
+    revalidatePath("/admin", "layout");
+    return { ok: `Made ${made.length} test bookings (${made.filter((m) => m.completed).length} completed): ${made.map((m) => m.ref).join(", ")}` };
+  } catch (e) { return { error: String((e as Error).message ?? e) }; }
+}
+
+export async function wipeTestBookings(_: PartnerState): Promise<PartnerState> {
+  await requireStaff(["admin"]);
+  const { deleteTestData } = await import("@/lib/test-data");
+  try {
+    const n = await deleteTestData();
+    revalidatePath("/admin", "layout");
+    return { ok: n ? `Deleted ${n} test bookings.` : "No test bookings to delete." };
+  } catch (e) { return { error: String((e as Error).message ?? e) }; }
+}

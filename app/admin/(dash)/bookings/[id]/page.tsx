@@ -18,6 +18,9 @@ export default async function BookingDetail({ params }: PageProps<"/admin/bookin
     one("customers", { id: b.customer_id }), one("service_zips", { zip: b.zip }), db.select("detailers", { status: "approved" }),
     db.select("messages", { booking_id: b.id }), db.select("bookings", { customer_id: b.customer_id }),
   ]);
+  const assigned = b.detailer_id ? await one("detailers", { id: b.detailer_id }) : null;
+  const partner = assigned ? (await db.select("market_detailers", { detailer_id: assigned.id }))[0] ?? null : null;
+  const offers = await db.select("job_offers", { booking_id: b.id });
   const eligible = detailers.filter((d) => zip && d.counties.includes(zip.county));
   const rate = b.commission_rate ?? (await commissionFor(b.detailer_id));
   const price = amountDue(b); // what the customer pays, after any promotion
@@ -69,6 +72,11 @@ export default async function BookingDetail({ params }: PageProps<"/admin/bookin
             {b.status === "requested" && <form action={setBookingStatus}><input type="hidden" name="id" value={b.id} /><input type="hidden" name="status" value="confirmed" /><Submit className="btn-green btn-sm">Confirm request & notify customer</Submit></form>}
             {["assigned", "confirmed"].includes(b.status) && <form action={setBookingStatus}><input type="hidden" name="id" value={b.id} /><input type="hidden" name="status" value="completed" /><Submit className="btn-primary btn-sm">Mark completed</Submit></form>}
           </div>
+          {assigned && (
+            <p className="rounded-2xl bg-sky/60 p-3 text-sm">Detailer: <b>{assigned.business_name || assigned.name}</b>
+              {partner && <> · <Link href={`/admin/detailers/${partner.id}?tab=won`} className="font-semibold text-brand underline">view their jobs</Link></>}</p>
+          )}
+          {offers.length > 0 && <p className="text-xs text-ink-muted">Job emailed to {offers.length} local detailer{offers.length > 1 ? "s" : ""} · {offers.filter((o) => o.status === "passed").length} passed · {offers.filter((o) => o.status === "accepted").length ? "accepted" : "not accepted yet"}</p>}
           {!["completed", "cancelled"].includes(b.status) && (
             <form action={assignDetailer} className="flex flex-wrap items-end gap-2">
               <input type="hidden" name="id" value={b.id} />

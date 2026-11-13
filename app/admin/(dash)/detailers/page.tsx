@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { amountDue } from "@/lib/pricing";
 import { requireStaff } from "@/lib/auth";
 import { db, getSetting } from "@/lib/db";
@@ -9,8 +10,9 @@ import { LogoImg } from "@/components/admin/logo-img";
 import { AutoSelect } from "@/components/admin/auto-select";
 import { COUNTIES } from "@/lib/config";
 import { canEmailPartners } from "@/lib/partners";
+import { canMakeTestData } from "@/lib/test-data";
 import type { MarketDetailer } from "@/lib/types";
-import { addPartner, deletePartner, importResearchedPartners, reviewDetailer, setPartnerStatus, updateDetailer, updatePartner } from "../../actions";
+import { addPartner, deletePartner, importResearchedPartners, makeTestBookings, reviewDetailer, wipeTestBookings, setPartnerStatus, updateDetailer, updatePartner } from "../../actions";
 
 async function SignedUp() {
   const staff = await requireStaff();
@@ -103,10 +105,13 @@ export default async function Detailers({ searchParams }: PageProps<"/admin/deta
   const status = typeof sp.status === "string" && (STATUSES as readonly string[]).includes(sp.status) ? sp.status : "all";
   const q = typeof sp.q === "string" ? sp.q.trim().toLowerCase() : "";
   const sort = typeof sp.sort === "string" && sp.sort in SORTS ? (sp.sort as keyof typeof SORTS) : "default";
-  const [partners, offers] = await Promise.all([db.select("market_detailers"), db.select("job_offers")]);
+  const [partners, offers, allBookings] = await Promise.all([db.select("market_detailers"), db.select("job_offers"), db.select("bookings")]);
+  const portalOf = Object.fromEntries(partners.map((m) => [m.id, m.detailer_id]));
   const stats = (id: string) => {
     const o = offers.filter((x) => x.market_detailer_id === id);
-    return { sent: o.length, responded: o.filter((x) => x.responded_at && x.status !== "taken").length, won: o.filter((x) => x.status === "accepted").length };
+    const d = portalOf[id];
+    // won = bookings assigned to them, whether they accepted from email or you assigned it
+    return { sent: o.length, responded: o.filter((x) => x.responded_at && x.status !== "taken").length, won: d ? allBookings.filter((b) => b.detailer_id === d).length : 0 };
   };
   const inCounty = partners.filter((m) => !county || m.counties.includes(county));
   const rows = inCounty
@@ -128,7 +133,7 @@ export default async function Detailers({ searchParams }: PageProps<"/admin/deta
     logo_url: m.logo_url, sent: stats(m.id).sent, won: stats(m.id).won,
     owner: m.owner_name, phone: m.phone, email: m.email, website: m.website, counties: m.counties,
   }));
-  const totals = { sent: offers.length, responded: offers.filter((x) => x.responded_at && x.status !== "taken").length, won: offers.filter((x) => x.status === "accepted").length };
+  const totals = { sent: offers.length, responded: offers.filter((x) => x.responded_at && x.status !== "taken").length, won: partners.reduce((s, m) => s + stats(m.id).won, 0) };
   const link = (p: Record<string, string>) => "/admin/detailers?" + new URLSearchParams({ ...(county ? { county } : {}), ...(status !== "all" ? { status } : {}), ...(q ? { q } : {}), ...(sort !== "default" ? { sort } : {}), ...p }).toString();
 
   return (
@@ -161,6 +166,19 @@ export default async function Detailers({ searchParams }: PageProps<"/admin/deta
             <span className="mt-1 text-xs text-ink-muted">Adds new ones only; existing entries are kept.</span>
           </StateForm>
           <a href="/admin/detailers/email-preview" target="_blank" className="btn-ghost btn-sm">Preview the job email</a>
+          {canMakeTestData() && (
+            <div className="w-full rounded-2xl border border-dashed border-amber-400 bg-amber-50 p-4">
+              <p className="text-sm font-bold text-amber-900">Test mode (only on your computer)</p>
+              <p className="mt-1 text-xs text-amber-900">Makes dummy bookings with Stripe&apos;s test Visa. Each one goes to the detailers in its county (emails are only logged, never sent) and a random detailer accepts it. About a third are then completed, which charges the test card.</p>
+              <div className="mt-3 flex flex-wrap items-start gap-3">
+                <StateForm action={makeTestBookings} className="flex flex-wrap items-center gap-2">
+                  <select name="count" defaultValue="10" className="input w-auto py-1.5">{[5, 10, 20, 30].map((n) => <option key={n} value={n}>{n} bookings</option>)}</select>
+                  <Submit className="btn-primary btn-sm" pending="Making bookings…">Generate test bookings</Submit>
+                </StateForm>
+                <StateForm action={wipeTestBookings}><Submit className="btn-ghost btn-sm" pending="Deleting…">Delete all test bookings</Submit></StateForm>
+              </div>
+            </div>
+          )}
           <details className="w-full">
             <summary className="cursor-pointer text-sm font-semibold text-brand">+ Add a detailer by hand</summary>
             <StateForm action={addPartner} className="mt-4 grid gap-3 sm:grid-cols-3">
@@ -215,10 +233,13 @@ export default async function Detailers({ searchParams }: PageProps<"/admin/deta
                       {m.website && <> · <a href={m.website} target="_blank" rel="noreferrer noopener" className="text-brand underline">website</a></>}</p>
                     <p className="mt-1 text-sm">{m.city || "City unknown"} · {m.counties.join(", ") || "no county"} · {Number(m.radius_miles)} mi radius{m.lat == null ? " · not on map" : ""}</p>
                   </div>
-                  <dl className="grid grid-cols-3 gap-4 text-center text-sm">
-                    <div><dt className="text-xs text-ink-muted">Job emails</dt><dd className="font-display text-xl font-extrabold">{st.sent}</dd></div>
-                    <div><dt className="text-xs text-ink-muted">Responded</dt><dd className="font-display text-xl font-extrabold">{st.responded}</dd></div>
-                    <div><dt className="text-xs text-ink-muted">Won</dt><dd className="font-display text-xl font-extrabold">{st.won}</dd></div>
+                  <dl className="grid grid-cols-3 gap-2 text-center text-sm">
+                    {([["Job emails", st.sent, "all"], ["Responded", st.responded, "all"], ["Won", st.won, "won"]] as const).map(([k, v, t]) => (
+                      <Link key={k} href={`/admin/detailers/${m.id}?tab=${t}`} title={`See ${k.toLowerCase()} for ${m.business_name}`}
+                        className={`rounded-xl px-3 py-1.5 transition hover:bg-sky ${k === "Won" && v ? "bg-palm/10" : ""}`}>
+                        <dt className="text-xs text-ink-muted">{k}</dt><dd className={`font-display text-xl font-extrabold ${v ? "text-brand underline decoration-2 underline-offset-4" : ""}`}>{v}</dd>
+                      </Link>
+                    ))}
                   </dl>
                 </div>
                 {isAdmin && (
