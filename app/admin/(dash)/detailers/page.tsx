@@ -5,6 +5,7 @@ import { money } from "@/lib/services";
 import { Badge } from "@/components/ui";
 import { StateForm, Submit } from "@/components/portal-forms";
 import { CoverageMap, type MapPartner } from "@/components/admin/coverage-map";
+import { LogoImg } from "@/components/admin/logo-img";
 import { COUNTIES } from "@/lib/config";
 import { canEmailPartners } from "@/lib/partners";
 import type { MarketDetailer } from "@/lib/types";
@@ -82,8 +83,7 @@ function Logo({ m }: { m: MarketDetailer }) {
   return (
     <span className="relative grid size-14 shrink-0 place-items-center overflow-hidden rounded-xl bg-sky font-display font-extrabold text-brand ring-1 ring-navy/10">
       {initials(m.business_name)}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      {m.logo_url && <img src={m.logo_url} alt="" referrerPolicy="no-referrer" loading="lazy" className="absolute inset-0 size-full bg-white object-contain p-1" />}
+      {m.logo_url && <LogoImg src={m.logo_url} />}
     </span>
   );
 }
@@ -128,7 +128,7 @@ export default async function Detailers({ searchParams }: PageProps<"/admin/deta
         <p className="rounded-2xl bg-amber-100 p-4 text-sm text-amber-900"><b>Emails to detailers are off.</b> U.S. law (CAN-SPAM) requires a postal address in business outreach emails. Add <code>BUSINESS_MAILING_ADDRESS</code> (a P.O. box or virtual mailbox works) to your settings to turn on invites and job emails.</p>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {[["Detailers", inCounty.length], ["With email", inCounty.filter((m) => m.email).length], ["Getting jobs", inCounty.filter((m) => m.status === "opted_in").length],
           ["Job emails sent", totals.sent], ["Responses", totals.responded], ["Jobs taken", totals.won]].map(([k, v]) => (
           <div key={k} className="card p-4"><p className="text-xs text-ink-muted">{k}</p><p className="mt-1 font-display text-2xl font-extrabold">{v}</p></div>

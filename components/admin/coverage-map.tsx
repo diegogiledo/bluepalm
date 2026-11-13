@@ -30,7 +30,16 @@ export function CoverageMap({ partners }: { partners: MapPartner[] }) {
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         maxZoom: 16, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
       }).addTo(map);
-      const shown = partners.filter((p) => show[p.status]);
+      // Detailers placed at the same city centre are fanned out ~1 km so each dot is clickable.
+      const seen = new Map<string, number>();
+      const shown = partners.filter((p) => show[p.status]).map((p) => {
+        const k = `${p.lat.toFixed(3)},${p.lon.toFixed(3)}`;
+        const n = seen.get(k) ?? 0;
+        seen.set(k, n + 1);
+        if (!n) return p;
+        const a = n * 2.4, r = 0.009 * Math.sqrt(n);
+        return { ...p, lat: p.lat + r * Math.sin(a), lon: p.lon + r * Math.cos(a) };
+      });
       for (const p of shown) {
         L.circle([p.lat, p.lon], { radius: p.radius_miles * 1609.34, color: COLOR[p.status], weight: 1, opacity: 0.5, fillColor: COLOR[p.status], fillOpacity: 0.09 }).addTo(map);
       }
