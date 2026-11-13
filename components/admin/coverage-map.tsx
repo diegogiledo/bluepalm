@@ -21,21 +21,14 @@ export type MapPartner = {
 const BLUE = "#1264D6";
 const MI_LAT = 69.0;
 const ESRI = "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas";
-const RAMP = [[219, 234, 254], [147, 197, 253], [59, 130, 246], [29, 78, 216], [30, 58, 138]];
-// on the dark map, more coverage = brighter (dim navy → bright sky blue)
-const RAMP_DARK = [[23, 42, 74], [30, 64, 125], [37, 99, 235], [96, 165, 250], [191, 219, 254]];
-const LEGEND_DARK = "linear-gradient(90deg,#172a4a,#1e407d,#2563eb,#60a5fa,#bfdbfe)";
-const LEGEND = "linear-gradient(90deg,#dbeafe,#93c5fd,#3b82f6,#1d4ed8,#1e3a8a)";
+const LEGEND_DARK = "linear-gradient(90deg,rgba(59,130,246,.1),rgba(59,130,246,.35))";
+const LEGEND = "linear-gradient(90deg,rgba(29,78,216,.08),rgba(29,78,216,.35))";
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 const initials = (n: string) => n.split(/\s+/).filter((w) => /[A-Za-z0-9]/.test(w)).slice(0, 2).map((w) => w.replace(/[^A-Za-z0-9]/g, "")[0] ?? "").join("").toUpperCase();
 const covers = (p: MapPartner, lat: number, lon: number) => {
   const dy = (lat - p.lat) * MI_LAT, dx = (lon - p.lon) * MI_LAT * Math.cos((lat * Math.PI) / 180);
   return dx * dx + dy * dy <= p.radius_miles * p.radius_miles;
-};
-const shade = (t: number, ramp = RAMP) => {
-  const x = Math.max(0, Math.min(1, t)) * (ramp.length - 1), i = Math.floor(x), f = x - i, a = ramp[i], b = ramp[Math.min(ramp.length - 1, i + 1)];
-  return `rgb(${a.map((v, k) => Math.round(v + (b[k] - v) * f)).join(",")})`;
 };
 
 const CSS = `
@@ -101,11 +94,20 @@ export function CoverageMap({ partners }: { partners: MapPartner[] }) {
           if (n) { cells.push({ lat, lon, n }); top = Math.max(top, n); }
         }
       }
+      // hexagons get their own pane, blended into the map (multiply on light, screen on dark)
+      // so water, roads and towns underneath stay readable
+      map.createPane("coverage");
+      const cov = map.getPane("coverage")!;
+      cov.style.zIndex = "410";
+      cov.style.mixBlendMode = dark ? "screen" : "multiply";
       const hexes = L.layerGroup();
       for (const c of cells) {
         const pts: [number, number][] = [];
         for (let i = 0; i < 6; i++) { const a = (Math.PI / 3) * i + Math.PI / 6; pts.push([c.lat + r * Math.sin(a), c.lon + r * kx * Math.cos(a)]); }
-        L.polygon(pts, { stroke: true, color: dark ? "#0b111c" : "#fff", weight: 1, fillColor: shade(Math.sqrt(c.n / top), dark ? RAMP_DARK : RAMP), fillOpacity: dark ? 0.8 : 0.72 })
+        // see-through: one hue, more detailers = more opaque, so roads, water and towns stay visible
+        const t = Math.sqrt(c.n / top);
+        L.polygon(pts, { pane: "coverage", stroke: true, color: dark ? "#60a5fa" : "#1d4ed8", weight: 0.6, opacity: 0.06 + 0.2 * t,
+          fillColor: dark ? "#3b82f6" : "#1d4ed8", fillOpacity: 0.05 + 0.3 * t })
           .bindTooltip(`${c.n} detailer${c.n > 1 ? "s" : ""} travel here`, { sticky: true, direction: "top", className: "bp-hex" })
           .addTo(hexes);
       }
