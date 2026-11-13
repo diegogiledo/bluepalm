@@ -27,7 +27,8 @@ const usd = (n: number, dp = 0) => (n < 0 ? "−" : "") + "$" + Math.abs(n).toLo
 const usdShort = (n: number) => Math.abs(n) >= 1000 ? `${n < 0 ? "−" : ""}$${(Math.abs(n) / 1000).toFixed(Math.abs(n) >= 10000 ? 0 : 1)}k` : usd(n);
 const pct = (n: number | null, dp = 1) => (n == null || !isFinite(n) ? "—" : `${(n * 100).toFixed(dp)}%`);
 const monthLabel = (m: string, long = false) => new Date(m + "-15").toLocaleDateString("en-US", long ? { month: "short", year: "numeric" } : { month: "short" });
-const CURRENT = new Date().toISOString().slice(0, 7);
+const flMonth = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }).slice(0, 7);
+const CURRENT = flMonth();
 /** x-axis tick: the current month is still in progress, so it gets a "so far" marker */
 const tick = (m: string) => monthLabel(m) + (m === CURRENT ? "*" : "");
 const SoFar = () => <p className="mt-1 text-[11px] text-ink-muted">* {monthLabel(CURRENT)} so far (month in progress)</p>;
@@ -98,7 +99,7 @@ type MixKey = keyof typeof MIX_METRICS;
 const RANGES = { "3": "Last 3 months", "6": "Last 6 months", "12": "Last 12 months", ytd: "Year to date", all: "All time" } as const;
 type RangeKey = keyof typeof RANGES;
 
-const thisMonth = () => new Date().toISOString().slice(0, 7);
+const thisMonth = () => flMonth();
 const shiftMonth = (m: string, k: number) => { const [y, mo] = m.split("-").map(Number); const d = new Date(y, mo - 1 + k, 15); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
 const monthSpan = (from: string, to: string) => { const out: string[] = []; for (let m = from; m <= to; m = shiftMonth(m, 1)) out.push(m); return out; };
 const r2 = (n: number) => Math.round(n * 100) / 100;

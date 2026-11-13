@@ -123,7 +123,7 @@ export default async function AccountPage() {
               <li key={b.id} className="card flex flex-wrap items-start justify-between gap-4 p-5">
                 <div>
                   <p className="font-semibold">{b.package_name} · {fmtDate(b.date)} <Badge status={b.status} /></p>
-                  <p className="text-sm text-ink-muted">{b.ref} · {vehicleLabel(b.vehicle)} · {b.city}{b.final_price != null ? ` · ${money(amountDue(b))}` : ""}{dName(b.detailer_id) ? ` · ${dName(b.detailer_id)}` : ""}</p>
+                  <p className="text-sm text-ink-muted">{b.ref} · {vehicleLabel(b.vehicle)} · {b.city}{b.final_price != null ? ` · ${money(amountDue(b))}` : ""}{b.refund_amount > 0 ? ` · ${money(b.refund_amount)} refunded` : ""}{dName(b.detailer_id) ? ` · ${dName(b.detailer_id)}` : ""}</p>
                   {b.status === "completed" && b.customer_rating == null && (
                     <form action={rateBooking} className="mt-3 flex flex-wrap items-center gap-2">
                       <input type="hidden" name="id" value={b.id} />

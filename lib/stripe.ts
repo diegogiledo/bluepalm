@@ -155,3 +155,9 @@ export async function attachTestCard(customer: string) {
   if (!(process.env.STRIPE_SECRET_KEY ?? "").startsWith("sk_test_")) throw new Error("Test cards need Stripe test keys.");
   return stripe<{ id: string }>("payment_methods/pm_card_visa/attach", { customer });
 }
+
+/** Whether a connected (detailer) account can receive payouts yet. */
+export async function connectedAccountReady(account: string): Promise<boolean> {
+  try { return Boolean((await stripeGet<{ payouts_enabled?: boolean; charges_enabled?: boolean }>(`accounts/${encodeURIComponent(account)}`)).payouts_enabled); }
+  catch { return false; }
+}

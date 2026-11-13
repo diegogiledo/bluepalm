@@ -19,6 +19,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ suggestions: await suggest(q, session), provider: geoProvider }, { headers });
     }
     if (sp.get("geo")) {
+      if (!rateLimit(`geo:${ip}`, 30, 10 * 60_000)) return NextResponse.json({ point: null }, { headers });
       const line1 = (sp.get("line1") ?? "").slice(0, 160), city = (sp.get("city") ?? "").slice(0, 80), zip = (sp.get("zip") ?? "").slice(0, 5);
       return NextResponse.json({ point: await geocode(line1, city, zip) }, { headers });
     }

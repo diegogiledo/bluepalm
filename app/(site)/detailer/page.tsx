@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { getDetailer } from "@/lib/portal";
 import { db } from "@/lib/db";
 import { commissionFor, money, todayFL, vehicleLabel, windowLabel } from "@/lib/services";
-import { stripeEnabled } from "@/lib/stripe";
+import { connectedAccountReady, stripeEnabled } from "@/lib/stripe";
 import { Badge, Thread, fmtDate } from "@/components/ui";
 import { Submit } from "@/components/portal-forms";
 import { acceptJob, connectPayouts, markComplete } from "./actions";
@@ -14,8 +14,13 @@ export const metadata: Metadata = { title: "Detailer portal", robots: { index: f
 export const dynamic = "force-dynamic";
 
 export default async function DetailerPortal({ searchParams }: PageProps<"/detailer">) {
-  const d = await getDetailer();
-  if (!d) redirect("/detailer/login");
+  const signedIn = await getDetailer();
+  if (!signedIn) redirect("/detailer/login");
+  let d = signedIn;
+  if (d.stripe_account_id && !d.onboarding.payouts_connected && (await connectedAccountReady(d.stripe_account_id))) {
+    d = { ...d, onboarding: { ...d.onboarding, payouts_connected: true } };
+    await db.update("detailers", { id: d.id }, { onboarding: d.onboarding });
+  }
   const { payouts, accepted: justAccepted } = await searchParams;
   const [bookings, zips, customers, messages] = await Promise.all([
     db.select("bookings"), db.select("service_zips"), db.select("customers"), db.select("messages"),

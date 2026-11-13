@@ -4,6 +4,7 @@ import { EXPENSE_CATEGORIES, financeData } from "@/lib/finance";
 import { FinanceDashboard } from "@/components/admin/finance-charts";
 import { StateForm, Submit } from "@/components/portal-forms";
 import { addExpense } from "../../actions";
+import { todayFL } from "@/lib/services";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +13,7 @@ export default async function Finance() {
   const staff = await requireStaff();
   if (staff.role !== "admin") redirect("/admin?denied=1");
   const { rows, expenses, cancelled, detailersActive } = await financeData();
-  const thisMonth = new Date().toISOString().slice(0, 7);
+  const thisMonth = todayFL().slice(0, 7);
   const expenseForm = (
     <StateForm action={addExpense} className="flex flex-wrap items-end gap-2">
       <label className="text-xs font-semibold">Month<input name="month" type="month" defaultValue={thisMonth} className="input mt-1 py-1.5" /></label>

@@ -23,6 +23,11 @@ function emailHtml(title: string, lines: string[], cta?: { label: string; url: s
   </div></body></html>`;
 }
 
+/** Outbox rows for a batch, in one database call. */
+async function recordMany(rows: { to: string; subject: string; body: string; status: "sent" | "logged" | "failed"; error?: string }[]) {
+  const at = new Date().toISOString();
+  await db.insertMany("outbox", rows.map((r) => ({ id: newId(), channel: "email" as const, to: r.to, subject: r.subject, body: r.body, status: r.status, error: r.error ?? "", created_at: at })));
+}
 async function record(channel: "email", to: string, subject: string, body: string, status: "sent" | "logged" | "failed", error = "") {
   await db.insert("outbox", { id: newId(), channel, to, subject, body, status, error, created_at: new Date().toISOString() });
 }
@@ -86,7 +91,7 @@ export async function sendPartnerEmails(items: PartnerEmail[]): Promise<number> 
     }
     try {
       const res = await fetch("https://api.resend.com/emails/batch", {
-        method: "POST", signal: AbortSignal.timeout(15000),
+        method: "POST", signal: AbortSignal.timeout(6000), // well inside the host's ~10 s limit
         headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
         body: JSON.stringify(chunk.map((m) => ({
           from: process.env.EMAIL_FROM || "BluePalm Auto Care <bookings@bluepalm.shop>",
@@ -96,10 +101,10 @@ export async function sendPartnerEmails(items: PartnerEmail[]): Promise<number> 
         }))),
       });
       if (!res.ok) throw new Error(`Resend ${res.status}: ${await res.text()}`);
-      for (const m of chunk) await record("email", m.to, m.title, textOf(m), "sent");
+      await recordMany(chunk.map((m) => ({ to: m.to, subject: m.title, body: textOf(m), status: "sent" as const })));
       ok += chunk.length;
     } catch (e) {
-      for (const m of chunk) await record("email", m.to, m.title, textOf(m), "failed", String(e));
+      await recordMany(chunk.map((m) => ({ to: m.to, subject: m.title, body: textOf(m), status: "failed" as const, error: String(e) })));
     }
   }
   return ok;

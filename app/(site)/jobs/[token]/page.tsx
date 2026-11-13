@@ -12,9 +12,10 @@ export const dynamic = "force-dynamic";
 
 const MSG: Record<string, string> = {
   taken: "Another detailer accepted this job first. We'll email you the next one in your area.",
-  closed: "This job is no longer available.",
+  closed: "This job is no longer available. If it's yours, sign in at bluepalm.shop/detailer/login to see it.",
   invalid: "This job link isn't valid anymore.",
   passed: "Got it, you passed on this job. We'll email you the next one.",
+  yours: "You have this job. Sign in at bluepalm.shop/detailer/login to see the address, message the customer and mark it complete.",
 };
 
 export default async function JobPage({ params, searchParams }: PageProps<"/jobs/[token]">) {
@@ -27,7 +28,9 @@ export default async function JobPage({ params, searchParams }: PageProps<"/jobs
   const open = jobOpen(b) && offer.status === "sent" && m.status !== "unsubscribed";
   const due = amountDue(b);
   const rate = await commissionFor(null);
-  const note = typeof result === "string" ? MSG[result] : !open ? (offer.status === "passed" ? MSG.passed : b.detailer_id ? MSG.taken : MSG.closed) : null;
+  // the detailer who won it sees that it's theirs, not "someone else took it"
+  const mine = offer.status === "accepted";
+  const note = mine ? MSG.yours : typeof result === "string" ? MSG[result] : !open ? (offer.status === "passed" ? MSG.passed : b.detailer_id ? MSG.taken : MSG.closed) : null;
   const Row = ({ k, v }: { k: string; v: string }) => <div className="flex justify-between gap-4 py-2"><dt className="text-ink-muted">{k}</dt><dd className="text-right font-medium">{v}</dd></div>;
   return (
     <div className="grid min-h-screen place-items-center bg-gradient-to-b from-sky to-white px-4 pb-16 pt-28">

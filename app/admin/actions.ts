@@ -128,6 +128,12 @@ export async function cancelOrRefund(form: FormData) {
     }
     const total = b.refund_amount + amt;
     await db.update("bookings", { id: b.id }, { refund_amount: total, payment_error: null, payment_status: total >= paid ? "refunded" : "partially_refunded" });
+    // points were earned when the job was completed; take back the refunded part
+    if (b.status === "completed") {
+      const c = await one("customers", { id: b.customer_id });
+      const per = Number((await one("settings", { key: "loyalty_points_per_dollar" }))?.value ?? 1);
+      if (c) await db.update("customers", { id: c.id }, { loyalty_points: Math.max(0, c.loyalty_points - Math.round(amt * per)) });
+    }
   }
   if (str(form, "cancel") === "1" && b.status !== "cancelled" && b.status !== "completed") {
     await db.update("bookings", { id: b.id }, { status: "cancelled", cancel_reason: `Cancelled by BluePalm: ${reason}` });

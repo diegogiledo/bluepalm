@@ -51,9 +51,9 @@ const prettyDate = (iso: string) => new Date(iso + "T12:00").toLocaleDateString(
 export type JobEmail = { subject: string; html: string; text: string };
 
 /** The email a local detailer gets for a paid booking near them. */
-export async function jobEmail(b: Booking, m: Pick<MarketDetailer, "business_name" | "owner_name">, acceptUrl: string, unsub: string): Promise<JobEmail> {
+export async function jobEmail(b: Booking, m: Pick<MarketDetailer, "business_name" | "owner_name">, acceptUrl: string, unsub: string, rateIn?: number): Promise<JobEmail> {
   const due = amountDue(b);
-  const rate = await commissionFor(null);
+  const rate = rateIn ?? (await commissionFor(null));
   const pay = due != null ? money(Math.round(due * (1 - rate) * 100) / 100) : null;
   const when = `${prettyDate(b.date)}, ${windowLabel(b.time_window).toLowerCase()}`;
   const hi = m.owner_name ? m.owner_name.split(" ")[0] : `${m.business_name} team`;
@@ -105,17 +105,29 @@ export async function jobEmail(b: Booking, m: Pick<MarketDetailer, "business_nam
 export async function offerJob(b: Booking) {
   try {
     const test = detailerTestMode();
-    if ((!canEmailPartners() && !test) || !b.payment_method_id) return 0;
+    if (!canEmailPartners() && !test) { console.warn("offerJob: BUSINESS_MAILING_ADDRESS is not set, so no detailers were emailed"); return 0; }
+    if (!b.payment_method_id) return 0;
     if ((await db.select("job_offers", { booking_id: b.id })).length) return 0; // already offered
     const zip = await one("service_zips", { zip: b.zip });
     if (!zip) return 0;
-    const partners = (await db.select("market_detailers")).filter((m) => receivesJobs(m) && m.counties.includes(zip.county));
+    // never offer jobs to a business whose BluePalm account you suspended or rejected
+    const blocked = new Set((await db.select("detailers")).filter((d) => d.status !== "approved").flatMap((d) => [d.id, d.email.toLowerCase()]));
+    let partners = (await db.select("market_detailers")).filter((m) => receivesJobs(m) && m.counties.includes(zip.county)
+      && !(m.detailer_id && blocked.has(m.detailer_id)) && !blocked.has((m.email ?? "").toLowerCase()));
+    // stay inside the email limit (bookings made from admin or recurring plans skip the booking-form check)
+    const { remainingEmails } = await import("./email-budget");
+    const room = (await remainingEmails()) - 6; // keep room for the accept + completion emails
+    if (room < partners.length) {
+      partners = partners.sort(() => Math.random() - 0.5).slice(0, Math.max(0, room));
+      console.warn(`offerJob: email limit, offered ${b.ref} to ${partners.length} detailers instead of all`);
+    }
     if (!partners.length) return 0;
+    const rate = await commissionFor(null);
     const offers: JobOffer[] = partners.map((m) => ({ id: newId(), booking_id: b.id, market_detailer_id: m.id, token: newToken(), status: "sent", sent_at: now(), responded_at: null }));
     await db.insertMany("job_offers", offers);
     const mails = await Promise.all(partners.map(async (m, i) => {
       const unsub = unsubUrl(m);
-      const j = await jobEmail(b, m, siteUrl(`/jobs/${offers[i].token}`), unsub);
+      const j = await jobEmail(b, m, siteUrl(`/jobs/${offers[i].token}`), unsub, rate);
       return { to: m.email!, title: j.subject, html: j.html, text: j.text, unsubscribeUrl: unsub };
     }));
     if (test) {
@@ -162,15 +174,20 @@ export async function acceptOffer(token: string, opts: { simulated?: boolean } =
   if (!offer) return { ok: false, reason: "invalid" };
   const [b, m] = await Promise.all([one("bookings", { id: offer.booking_id }), one("market_detailers", { id: offer.market_detailer_id })]);
   if (!b || !m || !validEmail(m.email) || m.status === "unsubscribed") return { ok: false, reason: "invalid" };
-  if (offer.status === "accepted" && b.detailer_id) {
-    const d = await one("detailers", { id: b.detailer_id });
-    if (d && d.id === m.detailer_id) return { ok: true, token: d.access_token };
+  if (offer.status === "passed") return { ok: false, reason: "closed" }; // they said no; the link can't be reused to win it
+  if (offer.status === "accepted") {
+    // re-opening the link signs them in only while the job is still theirs and active;
+    // a forwarded or old email can't be used as a permanent portal login
+    const d = b.detailer_id ? await one("detailers", { id: b.detailer_id }) : null;
+    if (d && d.id === m.detailer_id && d.status === "approved" && b.status === "assigned") return { ok: true, token: d.access_token };
+    return { ok: false, reason: "closed" };
   }
   if (!jobOpen(b)) {
     if (offer.status === "sent") await db.update("job_offers", { id: offer.id }, { status: "taken", responded_at: now() });
     return { ok: false, reason: b.detailer_id ? "taken" : "closed" };
   }
   const d = await detailerFor(m);
+  if (d.status !== "approved") return { ok: false, reason: "invalid" }; // suspended or rejected account
   const rate = await commissionFor(d.id);
   const wasRequested = b.status === "requested";
   // Only one update can win: it must still have the status we read.

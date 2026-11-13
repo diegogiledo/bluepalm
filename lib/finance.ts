@@ -1,7 +1,7 @@
 import "server-only";
 import { db, getSetting } from "./db";
 import { amountDue, listPrice } from "./pricing";
-import { vehicleLabel } from "./services";
+import { todayFL, vehicleLabel } from "./services";
 import type { Expense } from "./types";
 
 /**
@@ -72,7 +72,8 @@ export async function financeData(): Promise<{ rows: FinRow[]; expenses: Expense
 /** Revenue and gross profit per month for the last `n` months (Overview chart). */
 export async function monthlyRevenueProfit(n = 6) {
   const { rows } = await financeData();
-  const months = Array.from({ length: n }, (_, i) => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - (n - 1 - i)); return d.toISOString().slice(0, 7); });
+  const [y, m] = todayFL().split("-").map(Number); // Florida calendar, not the server's UTC clock
+  const months = Array.from({ length: n }, (_, i) => { const d = new Date(Date.UTC(y, m - 1 - (n - 1 - i), 15)); return d.toISOString().slice(0, 7); });
   return months.map((m) => {
     const rs = rows.filter((r) => r.month === m);
     return { month: m, revenue: r2(rs.reduce((s, r) => s + r.netGmv, 0)), profit: r2(rs.reduce((s, r) => s + r.profit, 0)) };

@@ -5,7 +5,7 @@ import { newId, newToken } from "./auth";
 import { sendEmail, siteUrl } from "./notify";
 import { TIME_WINDOWS, VEHICLES, LEGACY_VEHICLE_LABELS, POLICIES, LOYALTY, PROMOS } from "./config";
 import { amountDue } from "./pricing";
-import { chargeSavedCard, stripeEnabled } from "./stripe";
+import { chargeSavedCard, stripeEnabled, connectedAccountReady } from "./stripe";
 import type { BookingInput } from "./validation";
 import type { Booking, Customer, Detailer, Package } from "./types";
 
@@ -36,7 +36,8 @@ export async function detailersForZip(zip: string) {
     .filter((d) => d.counties.includes(z.county))
     .map((d) => ({ id: d.id, label: publicDetailerName(d) }));
 }
-export const publicDetailerName = (d: Pick<Detailer, "name">) => {
+export const publicDetailerName = (d: Pick<Detailer, "name"> & Partial<Pick<Detailer, "source" | "business_name">>) => {
+  if (d.source === "market" && d.business_name) return d.business_name;
   const [first, last] = d.name.split(/\s+/);
   return last ? `${first} ${last[0]}.` : first;
 };
@@ -193,7 +194,13 @@ export async function chargeBookingCard(b: Booking): Promise<{ ok: boolean; erro
   const due = amountDue(b);
   if (due == null || due <= 0) return { ok: false, error: "No amount to charge yet" };
   const rate = b.commission_rate ?? (await commissionFor(b.detailer_id));
-  const d = b.detailer_id ? await one("detailers", { id: b.detailer_id }) : null;
+  let d = b.detailer_id ? await one("detailers", { id: b.detailer_id }) : null;
+  // the account.updated webhook may never have reached us: ask Stripe before deciding where the money goes
+  if (d?.stripe_account_id && !d.onboarding.payouts_connected && (await connectedAccountReady(d.stripe_account_id))) {
+    const onboarding = { ...d.onboarding, payouts_connected: true };
+    await db.update("detailers", { id: d.id }, { onboarding });
+    d = { ...d, onboarding };
+  }
   try {
     const pi = await chargeSavedCard({
       bookingId: b.id, ref: b.ref, amountCents: Math.round(due * 100), commissionCents: Math.round(due * rate * 100),

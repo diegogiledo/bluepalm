@@ -63,3 +63,14 @@ export const LIMIT_MESSAGE = {
   daily: "We're sorry, but we've reached our limit of details for today. Please try again tomorrow.",
   monthly: "We're sorry, but we've reached our limit of details for this month. Please try again in a few days.",
 };
+
+/** How many more emails can go out right now (daily and monthly), or Infinity when no limit applies. */
+export async function remainingEmails(): Promise<number> {
+  const L = emailLimits();
+  if (!L.on) return Infinity;
+  const now = new Date();
+  let left = Infinity;
+  if (L.daily) left = Math.min(left, L.daily - (await countOutboxSince(new Date(now.getTime() - 864e5).toISOString(), L.statuses)));
+  if (L.monthly) left = Math.min(left, L.monthly - (await countOutboxSince(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString(), L.statuses)));
+  return left;
+}
