@@ -26,6 +26,24 @@ export type Detailer = {
   agreement_accepted_at: string; commission_rate: number | null;
   onboarding: { insurance_verified: boolean; background_check: boolean; orientation: boolean; payouts_connected: boolean };
   stripe_account_id: string | null; admin_notes: string; created_at: string;
+  /** "applied" = signed up on bluepalm.shop; "market" = an existing local business that took a job from an email. */
+  source?: "applied" | "market";
+};
+/** Existing local detailing businesses BluePalm sends customers to (no sign-up needed). */
+export type MarketDetailerStatus = "new" | "invited" | "opted_in" | "unsubscribed";
+export type MarketDetailer = {
+  id: string; business_name: string; owner_name: string | null; email: string | null; phone: string | null;
+  website: string | null; logo_url: string | null; city: string; counties: string[]; mobile: boolean;
+  /** Base location and how far they travel, for the coverage map. */
+  address: string | null; lat: number | null; lon: number | null; radius_miles: number;
+  source_url: string | null; notes: string; status: MarketDetailerStatus; token: string;
+  invited_at: string | null; opted_in_at: string | null; unsubscribed_at: string | null;
+  detailer_id: string | null; created_at: string;
+};
+/** One emailed job request to one market detailer. */
+export type JobOffer = {
+  id: string; booking_id: string; market_detailer_id: string; token: string;
+  status: "sent" | "accepted" | "passed" | "taken"; sent_at: string; responded_at: string | null;
 };
 export type Booking = {
   id: string; ref: string; customer_id: string;
@@ -60,6 +78,6 @@ export type Staff = { email: string; role: StaffRole; name: string };
 export type Tables = {
   packages: Package; service_zips: ServiceZip; settings: Setting; customers: Customer;
   detailers: Detailer; bookings: Booking; recurring_plans: RecurringPlan; messages: Message;
-  outbox: Outbox; staff: Staff;
+  outbox: Outbox; staff: Staff; market_detailers: MarketDetailer; job_offers: JobOffer;
 };
 export type TableName = keyof Tables;

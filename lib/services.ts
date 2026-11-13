@@ -144,6 +144,8 @@ export async function createBooking(input: BookingInput, opts: { recurringPlanId
       `${booking.package_name} · ${vehicleLabel(booking.vehicle)} · ${booking.city} ${booking.zip} · ${booking.date} ${booking.time_window}`,
     ], { label: "Open in admin", url: siteUrl(`/admin/bookings/${booking.id}`) });
   }
+  // email the job to local partner detailers in this county (never fails the booking)
+  await (await import("./partners")).offerJob(booking);
   return { booking, isNewCustomer: isNew, accountToken: isNew ? customer.access_token : null, promoStatus };
 }
 
@@ -195,7 +197,7 @@ export async function chargeBookingCard(b: Booking): Promise<{ ok: boolean; erro
   try {
     const pi = await chargeSavedCard({
       bookingId: b.id, ref: b.ref, amountCents: Math.round(due * 100), commissionCents: Math.round(due * rate * 100),
-      customer: b.stripe_customer_id, paymentMethod: b.payment_method_id, destination: d?.stripe_account_id ?? null,
+      customer: b.stripe_customer_id, paymentMethod: b.payment_method_id, destination: d?.stripe_account_id && d.onboarding.payouts_connected ? d.stripe_account_id : null,
       description: `BluePalm ${b.package_name} (${b.ref})`,
     });
     const paid = pi.status === "succeeded";

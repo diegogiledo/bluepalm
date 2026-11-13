@@ -8,6 +8,7 @@ import { addMessage, chargeBookingCard, commissionFor, completeBooking, createBo
 import { sendEmail, siteUrl } from "@/lib/notify";
 import { createBookingCheckout, refundPaymentIntent, stripeEnabled } from "@/lib/stripe";
 import type { BookingStatus } from "@/lib/types";
+import { canEmailPartners, importPartners, invitePartners, type PartnerImport } from "@/lib/partners";
 import { amountDue } from "@/lib/pricing";
 
 const str = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
@@ -92,7 +93,7 @@ export async function sendPaymentLink(form: FormData) {
   const d = b.detailer_id ? await one("detailers", { id: b.detailer_id }) : null;
   const session = await createBookingCheckout({
     bookingId: b.id, ref: b.ref, amountCents: Math.round(price * 100), commissionCents: Math.round(price * rate * 100),
-    customerEmail: c.email, destination: d?.stripe_account_id ?? null, description: `BluePalm ${b.package_name} (${b.ref})`,
+    customerEmail: c.email, destination: d?.stripe_account_id && d.onboarding.payouts_connected ? d.stripe_account_id : null, description: `BluePalm ${b.package_name} (${b.ref})`,
     successUrl: siteUrl("/account?paid=1"), cancelUrl: siteUrl("/account"),
   });
   await db.update("bookings", { id: b.id }, { payment_status: "payment_link_sent", checkout_url: session.url });
@@ -149,6 +150,7 @@ export async function deleteBooking(_: unknown, form: FormData): Promise<{ error
   if (b.payment_status === "paid" || b.payment_status === "partially_refunded")
     return { error: "This booking has a payment that hasn't been fully refunded. Refund it first, then delete it." };
   await db.remove("messages", { booking_id: b.id });
+  await db.remove("job_offers", { booking_id: b.id });
   await db.remove("bookings", { id: b.id });
   revalidatePath("/admin", "layout");
   redirect("/admin/bookings?deleted=" + encodeURIComponent(b.ref));
@@ -273,4 +275,79 @@ export async function chargeCard(form: FormData) {
   if (b.payment_status === "paid") return;
   await chargeBookingCard(b);
   done(b.id);
+}
+
+// ---------- partner detailers (existing local businesses) ----------
+const partnerDone = () => revalidatePath("/admin/detailers");
+type PartnerState = { ok?: string; error?: string } | null;
+
+/** Load the researched list bundled with the site (skips ones already added). */
+export async function importResearchedPartners(_: PartnerState): Promise<PartnerState> {
+  await requireStaff(["admin"]);
+  const rows = (await import("@/lib/data/market-detailers.json")).default as PartnerImport[];
+  const added = await importPartners(rows);
+  partnerDone();
+  return { ok: added ? `Added ${added} detailer${added > 1 ? "s" : ""}.` : "Everything in the researched list is already here." };
+}
+
+export async function addPartner(_: PartnerState, form: FormData): Promise<PartnerState> {
+  await requireStaff(["admin"]);
+  const name = str(form, "business_name");
+  if (!name) return { error: "Business name is required." };
+  const added = await importPartners([{
+    business_name: name, owner_name: str(form, "owner_name") || null, email: str(form, "email") || null,
+    phone: str(form, "phone") || null, website: str(form, "website") || null, logo_url: str(form, "logo_url") || null,
+    address: str(form, "address") || null, city: str(form, "city"), counties: form.getAll("counties").map(String),
+    radius_miles: num(form, "radius_miles") || 15, mobile: true,
+  }]);
+  partnerDone();
+  return added ? { ok: `${name} added.` } : { error: "That business is already in the list." };
+}
+
+export async function invitePartnerAction(_: PartnerState, form: FormData): Promise<PartnerState> {
+  await requireStaff(["admin"]);
+  if (!canEmailPartners()) return { error: "Add your mailing address first (BUSINESS_MAILING_ADDRESS): the law requires it in these emails." };
+  let ids = form.getAll("id").map(String).filter(Boolean);
+  if (str(form, "all") === "1") {
+    const county = str(form, "county");
+    ids = (await db.select("market_detailers", { status: "new" }))
+      .filter((m) => m.email && (!county || m.counties.includes(county))).slice(0, 50).map((m) => m.id);
+  }
+  if (!ids.length) return { error: "No one to invite: everyone with an email has been invited already." };
+  try {
+    const { sent } = await invitePartners(ids);
+    partnerDone();
+    return sent ? { ok: `Invite sent to ${sent} detailer${sent > 1 ? "s" : ""}.` } : { error: "No invites were sent. Check the Outbox for errors." };
+  } catch (e) { return { error: String((e as Error).message ?? e) }; }
+}
+
+export async function setPartnerStatus(form: FormData) {
+  await requireStaff(["admin"]);
+  const m = await one("market_detailers", { id: str(form, "id") });
+  if (!m) return;
+  const to = str(form, "status");
+  if (to === "unsubscribed") await db.update("market_detailers", { id: m.id }, { status: "unsubscribed", unsubscribed_at: new Date().toISOString() });
+  partnerDone();
+}
+
+export async function updatePartner(form: FormData) {
+  await requireStaff(["admin"]);
+  const m = await one("market_detailers", { id: str(form, "id") });
+  if (!m) return;
+  const email = str(form, "email").toLowerCase();
+  await db.update("market_detailers", { id: m.id }, {
+    business_name: str(form, "business_name") || m.business_name, owner_name: str(form, "owner_name") || null,
+    email: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : null, phone: str(form, "phone") || null,
+    website: str(form, "website") || null, logo_url: /^https:\/\//.test(str(form, "logo_url")) ? str(form, "logo_url") : null,
+    counties: form.getAll("counties").map(String), radius_miles: Math.min(Math.max(num(form, "radius_miles") || m.radius_miles, 1), 60),
+  });
+  partnerDone();
+}
+
+export async function deletePartner(form: FormData) {
+  await requireStaff(["admin"]);
+  const id = str(form, "id");
+  await db.remove("job_offers", { market_detailer_id: id });
+  await db.remove("market_detailers", { id });
+  partnerDone();
 }

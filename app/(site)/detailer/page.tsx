@@ -16,14 +16,15 @@ export const dynamic = "force-dynamic";
 export default async function DetailerPortal({ searchParams }: PageProps<"/detailer">) {
   const d = await getDetailer();
   if (!d) redirect("/detailer/login");
-  const { payouts } = await searchParams;
+  const { payouts, accepted: justAccepted } = await searchParams;
   const [bookings, zips, customers, messages] = await Promise.all([
     db.select("bookings"), db.select("service_zips"), db.select("customers"), db.select("messages"),
   ]);
   const today = todayFL();
   const countyOf = Object.fromEntries(zips.map((z) => [z.zip, z.county]));
   const rate = await commissionFor(d.id);
-  const ready = d.onboarding.insurance_verified && d.onboarding.background_check;
+  const partner = d.source === "market"; // existing local business that took a job from email
+  const ready = partner || (d.onboarding.insurance_verified && d.onboarding.background_check);
 
   const available = bookings.filter((b) => b.status === "confirmed" && !b.detailer_id && b.date >= today && d.counties.includes(countyOf[b.zip])
     && (!b.preferred_detailer_id || b.preferred_detailer_id === d.id)).sort((a, b) => a.date.localeCompare(b.date));
@@ -37,7 +38,7 @@ export default async function DetailerPortal({ searchParams }: PageProps<"/detai
   // Data minimisation: detailers only see the customer's first name, never email or phone.
   const firstName = (id: string) => customers.find((c) => c.id === id)?.name.split(" ")[0] ?? "Customer";
 
-  const steps: [string, boolean][] = [
+  const steps: [string, boolean][] = partner ? [["Took your first BluePalm job", true], ["Payouts connected", d.onboarding.payouts_connected]] : [
     ["Application approved", true], ["Insurance verified", d.onboarding.insurance_verified], ["Background check", d.onboarding.background_check],
     ["Orientation", d.onboarding.orientation], ["Payouts connected", d.onboarding.payouts_connected || Boolean(d.stripe_account_id)],
   ];
@@ -51,6 +52,7 @@ export default async function DetailerPortal({ searchParams }: PageProps<"/detai
           <form action={signOut.bind(null, "detailer")}><button className="btn-ghost">Sign out</button></form>
         </div>
 
+        {justAccepted && <p className="mt-6 rounded-2xl bg-palm/10 p-4 text-sm font-semibold text-navy" role="status">🎉 The job is yours. You&apos;ll find the address and instructions under Accepted jobs below.</p>}
         <div className="mt-8 grid gap-4 sm:grid-cols-4">
           {[["Available jobs", String(available.length)], ["Accepted", String(accepted.length)], ["Completed", String(completed.length)],
             ["Earnings (est.)", money(Math.round(earnings * 100) / 100)]].map(([k, v]) => (
@@ -67,9 +69,9 @@ export default async function DetailerPortal({ searchParams }: PageProps<"/detai
             ))}
           </ol>
           {!ready && <p className="mt-4 text-sm text-amber-700">You can browse jobs now; accepting jobs unlocks once insurance and background check are verified by BluePalm.</p>}
-          {!d.stripe_account_id && (
+          {!d.onboarding.payouts_connected && (
             <form action={connectPayouts} className="mt-4">
-              <button className="btn-primary btn-sm">Set up payouts with Stripe</button>
+              <button className="btn-primary btn-sm">{d.stripe_account_id ? "Finish payout setup with Stripe" : "Set up payouts with Stripe"}</button>
               {payouts === "unavailable" && <span className="ml-3 text-sm text-ink-muted">Payout setup isn&apos;t enabled yet — BluePalm will contact you.</span>}
             </form>
           )}

@@ -10,7 +10,7 @@ import { BRAND } from "./config";
  */
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
-function emailHtml(title: string, lines: string[], cta?: { label: string; url: string }) {
+function emailHtml(title: string, lines: string[], cta?: { label: string; url: string }, footer?: string) {
   return `<!doctype html><html><body style="margin:0;background:#EAF3FF;font-family:Arial,sans-serif;color:#0B2342">
   <div style="max-width:560px;margin:0 auto;padding:32px 20px">
     <div style="font-weight:800;font-size:20px;color:#1264D6;margin-bottom:16px">BluePalm Auto Care</div>
@@ -20,6 +20,7 @@ function emailHtml(title: string, lines: string[], cta?: { label: string; url: s
       ${cta ? `<p style="margin-top:20px"><a href="${esc(cta.url)}" style="background:#1264D6;color:#fff;padding:12px 20px;border-radius:999px;text-decoration:none;font-weight:700">${esc(cta.label)}</a></p>` : ""}
     </div>
     <p style="font-size:12px;color:#5b6b80;margin-top:16px">${esc(BRAND.tagline)} · ${esc(BRAND.region)}</p>
+    ${footer ?? ""}
   </div></body></html>`;
 }
 
@@ -51,3 +52,53 @@ export async function sendEmail(to: string, title: string, lines: string[], cta?
 }
 
 export const siteUrl = (p: string) => `${BRAND.siteUrl.replace(/\/$/, "")}${p}`;
+
+// ---------- partner emails (local detailing businesses) ----------
+/** Postal address required in every business-outreach email (CAN-SPAM). */
+export const mailingAddress = () => (process.env.BUSINESS_MAILING_ADDRESS ?? "").trim();
+
+export type PartnerEmail = { to: string; title: string; lines: string[]; cta: { label: string; url: string }; unsubscribeUrl: string };
+
+function partnerFooter(unsub: string) {
+  return `<p style="font-size:12px;color:#5b6b80;margin-top:8px">You're receiving this because your business offers car detailing in the Tampa Bay–Sarasota area. ` +
+    `<a href="${esc(unsub)}" style="color:#5b6b80">Unsubscribe</a> and we won't email you again.<br>${esc(BRAND.name)} · ${esc(mailingAddress())}</p>`;
+}
+
+/**
+ * Send outreach / job emails, up to 100 per Resend call (stays under its
+ * per-second limit). Each carries an unsubscribe link, a one-click
+ * List-Unsubscribe header and the postal address. Returns how many were
+ * accepted by Resend (or logged when no key is set).
+ */
+export async function sendPartnerEmails(items: PartnerEmail[]): Promise<number> {
+  if (!items.length) return 0;
+  const key = process.env.RESEND_API_KEY;
+  const textOf = (m: PartnerEmail) => [...m.lines, `${m.cta.label}: ${m.cta.url}`, `Unsubscribe: ${m.unsubscribeUrl}`, `${BRAND.name} · ${mailingAddress()}`].join("\n\n");
+  let ok = 0;
+  for (let i = 0; i < items.length; i += 100) {
+    const chunk = items.slice(i, i + 100);
+    if (!key) {
+      for (const m of chunk) { console.info(`[email:logged] to=${m.to} subject="${m.title}"`); await record("email", m.to, m.title, textOf(m), "logged"); }
+      ok += chunk.length;
+      continue;
+    }
+    try {
+      const res = await fetch("https://api.resend.com/emails/batch", {
+        method: "POST", signal: AbortSignal.timeout(15000),
+        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+        body: JSON.stringify(chunk.map((m) => ({
+          from: process.env.EMAIL_FROM || "BluePalm Auto Care <bookings@bluepalmautocare.com>",
+          to: [m.to], subject: m.title, text: textOf(m),
+          html: emailHtml(m.title, m.lines, m.cta, partnerFooter(m.unsubscribeUrl)),
+          headers: { "List-Unsubscribe": `<${m.unsubscribeUrl}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" },
+        }))),
+      });
+      if (!res.ok) throw new Error(`Resend ${res.status}: ${await res.text()}`);
+      for (const m of chunk) await record("email", m.to, m.title, textOf(m), "sent");
+      ok += chunk.length;
+    } catch (e) {
+      for (const m of chunk) await record("email", m.to, m.title, textOf(m), "failed", String(e));
+    }
+  }
+  return ok;
+}

@@ -60,3 +60,15 @@ export function DeleteBookingForm({ action, id, blocked }: { action: Action; id:
     </form>
   );
 }
+
+/** Small form bound to a server action that returns { ok } / { error }. */
+export function StateForm({ action, children, className }: { action: Action; children: React.ReactNode; className?: string }) {
+  const [state, formAction] = useActionState(action, null);
+  return (
+    <form action={formAction} className={className}>
+      {children}
+      {state?.ok && <p className="mt-2 w-full text-sm font-semibold text-palm-600" role="status">{state.ok}</p>}
+      {state?.error && <p className="mt-2 w-full text-sm font-semibold text-red-700" role="alert">{state.error}</p>}
+    </form>
+  );
+}

@@ -137,3 +137,35 @@ export async function reverse(lat: number, lon: number): Promise<Address | null>
   if (street) return { line1: street.line1, city: street.city, zip: street.zip, state: "FL" };
   return fromOsm;
 }
+
+// ---------- base location of a detailing business (coverage map) ----------
+const cityCache = new Map<string, { lat: number; lon: number } | null>();
+let lastNominatim = 0;
+/**
+ * Coordinates for a business: its street address via the Census geocoder,
+ * otherwise the centre of its city via OpenStreetMap (spaced ≥1 s apart and
+ * cached per city, within Nominatim's usage policy).
+ */
+export async function locate(address: string | null, city: string): Promise<{ lat: number; lon: number } | null> {
+  if (address && /^\s*\d/.test(address)) {
+    try {
+      const m = await census(/\b(fl|florida)\b/i.test(address) ? address : `${address}, ${city}, FL`);
+      if (m[0]) return { lat: m[0].coordinates.y, lon: m[0].coordinates.x };
+    } catch {}
+  }
+  const key = city.trim().toLowerCase();
+  if (!key) return null;
+  if (cityCache.has(key)) return cityCache.get(key)!;
+  const wait = lastNominatim + 1100 - Date.now();
+  if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+  lastNominatim = Date.now();
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?city=${encodeURIComponent(city)}&state=Florida&country=us&format=jsonv2&limit=1`, {
+      signal: AbortSignal.timeout(TIMEOUT), headers: { "User-Agent": UA, "Accept-Language": "en" },
+    });
+    const j = res.ok ? ((await res.json()) as { lat: string; lon: string }[]) : [];
+    const out = j[0] ? { lat: Number(j[0].lat), lon: Number(j[0].lon) } : null;
+    cityCache.set(key, out);
+    return out;
+  } catch { return null; }
+}

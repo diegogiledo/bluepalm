@@ -12,8 +12,8 @@ async function me() {
   if (!d) redirect("/detailer/login");
   return d;
 }
-const canAcceptJobs = async (d: { onboarding: { insurance_verified: boolean; background_check: boolean } }) =>
-  d.onboarding.insurance_verified && d.onboarding.background_check;
+const canAcceptJobs = async (d: { source?: string; onboarding: { insurance_verified: boolean; background_check: boolean } }) =>
+  d.source === "market" || (d.onboarding.insurance_verified && d.onboarding.background_check);
 
 export async function acceptJob(form: FormData) {
   const d = await me();
