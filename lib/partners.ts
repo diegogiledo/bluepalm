@@ -1,7 +1,7 @@
 import "server-only";
 import { db, one } from "./db";
 import { newId, newToken } from "./auth";
-import { mailingAddress, sendEmail, sendPartnerEmails, siteUrl } from "./notify";
+import { escapeHtml, mailingAddress, partnerFooterHtml, partnerFooterText, sendEmail, sendPartnerEmails, siteUrl } from "./notify";
 import { commissionFor, money, now, publicDetailerName, todayFL, vehicleLabel, windowLabel } from "./services";
 import { amountDue } from "./pricing";
 import { locate } from "./geo";
@@ -11,49 +11,20 @@ import type { Booking, Detailer, JobOffer, MarketDetailer } from "./types";
 /**
  * Local detailing businesses ("partners") that BluePalm sends customers to.
  *
- * 1. Admin sends a one-time invite. Only partners who click "Yes" get jobs.
- * 2. Every new booking is emailed to opted-in partners serving its county.
- * 3. The first partner to accept is assigned; the others see "already taken".
+ * 1. When a customer books AND saves their card, the job is emailed to every
+ *    local business serving that county (no sign-up or invite needed).
+ * 2. The first business to accept is assigned; the others see "already taken".
  *    The winner gets a BluePalm portal account (address, messages, payouts).
- * Emails never include the customer's contact details.
+ * Emails never include the customer's contact details. Anyone can unsubscribe.
  */
 
 const unsubUrl = (md: MarketDetailer) => siteUrl(`/api/partners/unsubscribe?t=${encodeURIComponent(md.token)}`);
 const validEmail = (e: string | null): e is string => Boolean(e && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
 
+/** Job emails need a postal address in the footer (CAN-SPAM). */
 export const canEmailPartners = () => Boolean(mailingAddress());
-
-/** Send the one-time invite to the given partners (skips unsubscribed / no email). */
-export async function invitePartners(ids: string[]): Promise<{ sent: number; skipped: number }> {
-  if (!canEmailPartners()) throw new Error("Set BUSINESS_MAILING_ADDRESS before emailing partners.");
-  const all = await db.select("market_detailers");
-  const targets = all.filter((m) => ids.includes(m.id) && validEmail(m.email) && (m.status === "new" || m.status === "invited"));
-  const sent = await sendPartnerEmails(targets.map((m) => ({
-    to: m.email!,
-    title: `Free customer leads for ${m.business_name}`,
-    lines: [
-      `Hi${m.owner_name ? ` ${m.owner_name.split(" ")[0]}` : ""},`,
-      `BluePalm Auto Care books mobile car detailing for customers in ${m.counties.join(", ") || "Tampa Bay and Sarasota"}. We're looking for local detailers like ${m.business_name} to take those jobs.`,
-      "How it works: when a customer books in your area we email you the job (service, vehicle size, city, date and your payout). The first detailer to accept gets it. The customer pays by card through BluePalm and your share is paid to your bank through Stripe.",
-      "No sign-up fee, no monthly cost and no minimum: take only the jobs you want.",
-      "Want job emails? Click below. If not, ignore this email and we won't send another.",
-    ],
-    cta: { label: "Yes, send me jobs", url: siteUrl(`/partners/${m.token}`) },
-    unsubscribeUrl: unsubUrl(m),
-  })));
-  if (sent) {
-    const sentIds = new Set(targets.slice(0, sent).map((m) => m.id));
-    for (const m of targets) if (sentIds.has(m.id)) await db.update("market_detailers", { id: m.id }, { status: m.status === "new" ? "invited" : m.status, invited_at: now() });
-  }
-  return { sent, skipped: ids.length - targets.length };
-}
-
-export async function optIn(token: string) {
-  const m = await one("market_detailers", { token });
-  if (!m || m.status === "unsubscribed") return m;
-  if (m.status !== "opted_in") await db.update("market_detailers", { id: m.id }, { status: "opted_in", opted_in_at: now() });
-  return { ...m, status: "opted_in" as const };
-}
+/** Businesses that receive job emails: everyone with an email who hasn't unsubscribed. */
+export const receivesJobs = (m: MarketDetailer) => m.status !== "unsubscribed" && validEmail(m.email);
 
 export async function unsubscribe(token: string) {
   const m = await one("market_detailers", { token });
@@ -61,40 +32,84 @@ export async function unsubscribe(token: string) {
   if (m.status !== "unsubscribed") await db.update("market_detailers", { id: m.id }, { status: "unsubscribed", unsubscribed_at: now() });
   return m;
 }
-
-/** What the detailer earns, shown in job emails. */
-async function payoutText(b: Booking) {
-  const due = amountDue(b);
-  if (due == null) return "Custom quote: price agreed before the job";
-  const rate = await commissionFor(null);
-  return `about ${money(Math.round(due * (1 - rate) * 100) / 100)} (customer price ${money(due)}, less BluePalm's ${(rate * 100).toFixed(0)}% fee)`;
+export async function resubscribe(token: string) {
+  const m = await one("market_detailers", { token });
+  if (m?.status === "unsubscribed") await db.update("market_detailers", { id: m.id }, { status: "new", unsubscribed_at: null });
+  return m;
 }
 
-/** Email a new booking to every opted-in partner serving its county. Never throws. */
+const prettyDate = (iso: string) => new Date(iso + "T12:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+
+export type JobEmail = { subject: string; html: string; text: string };
+
+/** The email a local detailer gets for a paid booking near them. */
+export async function jobEmail(b: Booking, m: Pick<MarketDetailer, "business_name" | "owner_name">, acceptUrl: string, unsub: string): Promise<JobEmail> {
+  const due = amountDue(b);
+  const rate = await commissionFor(null);
+  const pay = due != null ? money(Math.round(due * (1 - rate) * 100) / 100) : null;
+  const when = `${prettyDate(b.date)}, ${windowLabel(b.time_window).toLowerCase()}`;
+  const hi = m.owner_name ? m.owner_name.split(" ")[0] : `${m.business_name} team`;
+  const subject = pay ? `${pay} detailing job in ${b.city} on ${prettyDate(b.date).split(",")[0]}` : `Detailing job in ${b.city}, customer ready to book`;
+  const e = escapeHtml;
+  const row = (k: string, v: string) => `<tr><td style="padding:6px 0;color:#5b6b80">${e(k)}</td><td style="padding:6px 0;text-align:right;font-weight:700">${e(v)}</td></tr>`;
+  const step = (n: number, t: string, d: string) => `<tr><td style="vertical-align:top;padding:0 12px 12px 0"><div style="width:26px;height:26px;border-radius:13px;background:#EAF3FF;color:#1264D6;font-weight:800;text-align:center;line-height:26px">${n}</div></td><td style="padding:0 0 12px"><b>${e(t)}</b><br><span style="color:#5b6b80">${e(d)}</span></td></tr>`;
+  const html = `<!doctype html><html><body style="margin:0;background:#EAF3FF;font-family:Arial,Helvetica,sans-serif;color:#0B2342">
+  <div style="max-width:560px;margin:0 auto;padding:28px 16px">
+    <div style="font-weight:800;font-size:20px;color:#1264D6;margin-bottom:14px">BluePalm Auto Care</div>
+    <div style="background:#fff;border-radius:16px;padding:26px">
+      <p style="margin:0 0 6px;font-size:13px;font-weight:700;color:#16a34a;text-transform:uppercase;letter-spacing:.04em">Customer's card is on file</p>
+      <h1 style="font-size:24px;line-height:1.25;margin:0 0 12px">${pay ? `Earn ${e(pay)} detailing a car in ${e(b.city)}` : `A customer in ${e(b.city)} needs a detailer`}</h1>
+      <p style="line-height:1.55;margin:0 0 16px">Hi ${e(hi)}, a customer near you just booked a detail with BluePalm and we'd like <b>${e(m.business_name)}</b> to do it.</p>
+      <table style="width:100%;border-collapse:collapse;font-size:15px;border-top:1px solid #e5edf7;border-bottom:1px solid #e5edf7;margin-bottom:20px">
+        ${row("Service", b.package_name)}${row("Vehicle", vehicleLabel(b.vehicle))}${row("When", when)}${row("Where", `${b.city} ${b.zip}`)}
+        ${row("You earn", pay ?? "Custom quote, agreed before the job")}
+      </table>
+      <p style="text-align:center;margin:0 0 8px"><a href="${e(acceptUrl)}" style="display:inline-block;background:#16a34a;color:#fff;padding:14px 28px;border-radius:999px;text-decoration:none;font-weight:800;font-size:16px">Accept this job</a></p>
+      <p style="text-align:center;margin:0 0 22px;font-size:13px;color:#5b6b80">First detailer to accept gets it.</p>
+      <h2 style="font-size:16px;margin:0 0 4px">What is BluePalm?</h2>
+      <p style="line-height:1.55;margin:0 0 14px;color:#33465e">We bring customers to local mobile detailers in Tampa Bay and Sarasota. You keep running your business your way; we just send you extra paid jobs. No sign-up, no fees to join, no contract.</p>
+      <table style="border-collapse:collapse;font-size:14px;line-height:1.45">
+        ${step(1, "Accept the job", "See the address and the customer's notes right away.")}
+        ${step(2, "Do the detail", "Show up in the time window and make it shine.")}
+        ${step(3, "Get paid", "Mark it done. The customer's card is charged and your share goes to your bank through Stripe.")}
+      </table>
+      <p style="line-height:1.55;margin:6px 0 0;font-size:13px;color:#5b6b80">Not a fit this time? Just ignore this email.</p>
+    </div>
+    ${partnerFooterHtml(unsub)}
+  </div></body></html>`;
+  const text = [
+    `Hi ${hi},`,
+    `A customer near you just booked a detail with BluePalm (card on file) and we'd like ${m.business_name} to do it.`,
+    `Service: ${b.package_name}\nVehicle: ${vehicleLabel(b.vehicle)}\nWhen: ${when}\nWhere: ${b.city} ${b.zip}\nYou earn: ${pay ?? "custom quote"}`,
+    `Accept this job (first to accept gets it): ${acceptUrl}`,
+    "What is BluePalm? We bring customers to local mobile detailers in Tampa Bay and Sarasota. No sign-up, no fees, no contract.",
+    "1. Accept the job: see the address and notes. 2. Do the detail. 3. Mark it done: the customer's card is charged and your share goes to your bank through Stripe.",
+    partnerFooterText(unsub),
+  ].join("\n\n");
+  return { subject, html, text };
+}
+
+/**
+ * Email a booking to every local business serving its county, once the
+ * customer's card is saved. Never throws (a booking must never fail because
+ * of this). Returns how many emails went out.
+ */
 export async function offerJob(b: Booking) {
   try {
-    if (!canEmailPartners()) return 0;
+    if (!canEmailPartners() || !b.payment_method_id) return 0;
+    if ((await db.select("job_offers", { booking_id: b.id })).length) return 0; // already offered
     const zip = await one("service_zips", { zip: b.zip });
     if (!zip) return 0;
-    const partners = (await db.select("market_detailers", { status: "opted_in" }))
-      .filter((m) => validEmail(m.email) && m.counties.includes(zip.county));
+    const partners = (await db.select("market_detailers")).filter((m) => receivesJobs(m) && m.counties.includes(zip.county));
     if (!partners.length) return 0;
-    const payout = await payoutText(b);
     const offers: JobOffer[] = partners.map((m) => ({ id: newId(), booking_id: b.id, market_detailer_id: m.id, token: newToken(), status: "sent", sent_at: now(), responded_at: null }));
     await db.insertMany("job_offers", offers);
-    return await sendPartnerEmails(partners.map((m, i) => ({
-      to: m.email!,
-      title: `New job in ${b.city}: ${b.package_name} on ${b.date}`,
-      lines: [
-        `A BluePalm customer in ${b.city} (${b.zip}) needs a detailer.`,
-        `Service: ${b.package_name} · ${vehicleLabel(b.vehicle)}`,
-        `When: ${b.date}, ${windowLabel(b.time_window)}`,
-        `Your payout: ${payout}`,
-        "First to accept gets the job. The address and instructions are shown once you accept.",
-      ],
-      cta: { label: "View & accept job", url: siteUrl(`/jobs/${offers[i].token}`) },
-      unsubscribeUrl: unsubUrl(m),
-    })));
+    const mails = await Promise.all(partners.map(async (m, i) => {
+      const unsub = unsubUrl(m);
+      const j = await jobEmail(b, m, siteUrl(`/jobs/${offers[i].token}`), unsub);
+      return { to: m.email!, title: j.subject, html: j.html, text: j.text, unsubscribeUrl: unsub };
+    }));
+    return await sendPartnerEmails(mails);
   } catch (e) {
     console.error("offerJob failed", e);
     return 0;

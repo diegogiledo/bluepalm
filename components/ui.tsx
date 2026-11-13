@@ -6,10 +6,10 @@ const STATUS: Record<string, string> = {
   pending: "bg-amber-100 text-amber-800", approved: "bg-palm/15 text-palm-600", rejected: "bg-red-100 text-red-700", suspended: "bg-navy/8 text-navy/60",
   active: "bg-palm/15 text-palm-600", paused: "bg-amber-100 text-amber-800",
   unpaid: "bg-navy/8 text-navy/70", card_on_file: "bg-sky text-brand", payment_failed: "bg-red-100 text-red-700", payment_link_sent: "bg-sky text-brand", paid: "bg-palm/15 text-palm-600", refunded: "bg-red-100 text-red-700", partially_refunded: "bg-red-100 text-red-700",
-  new: "bg-navy/8 text-navy/70", invited: "bg-amber-100 text-amber-800", opted_in: "bg-palm/15 text-palm-600", unsubscribed: "bg-red-100 text-red-700",
+  no_email: "bg-amber-100 text-amber-800", unsubscribed: "bg-red-100 text-red-700",
   sent: "bg-palm/15 text-palm-600", logged: "bg-sky text-brand", failed: "bg-red-100 text-red-700",
 };
-const LABEL: Record<string, string> = { new: "Not invited", opted_in: "Getting jobs", requested: "Awaiting confirmation", payment_link_sent: "Payment link sent", partially_refunded: "Partly refunded", card_on_file: "Card on file", payment_failed: "Payment failed" };
+const LABEL: Record<string, string> = { no_email: "No email: can't get jobs", requested: "Awaiting confirmation", payment_link_sent: "Payment link sent", partially_refunded: "Partly refunded", card_on_file: "Card on file", payment_failed: "Payment failed" };
 
 export function Badge({ status }: { status: string }) {
   return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold capitalize ${STATUS[status] ?? "bg-navy/8"}`}>{LABEL[status] ?? status.replace(/_/g, " ")}</span>;

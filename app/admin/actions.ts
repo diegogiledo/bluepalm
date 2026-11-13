@@ -8,7 +8,7 @@ import { addMessage, chargeBookingCard, commissionFor, completeBooking, createBo
 import { sendEmail, siteUrl } from "@/lib/notify";
 import { createBookingCheckout, refundPaymentIntent, stripeEnabled } from "@/lib/stripe";
 import type { BookingStatus } from "@/lib/types";
-import { canEmailPartners, importPartners, invitePartners, type PartnerImport } from "@/lib/partners";
+import { importPartners, type PartnerImport } from "@/lib/partners";
 import { amountDue } from "@/lib/pricing";
 
 const str = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
@@ -304,29 +304,13 @@ export async function addPartner(_: PartnerState, form: FormData): Promise<Partn
   return added ? { ok: `${name} added.` } : { error: "That business is already in the list." };
 }
 
-export async function invitePartnerAction(_: PartnerState, form: FormData): Promise<PartnerState> {
-  await requireStaff(["admin"]);
-  if (!canEmailPartners()) return { error: "Add your mailing address first (BUSINESS_MAILING_ADDRESS): the law requires it in these emails." };
-  let ids = form.getAll("id").map(String).filter(Boolean);
-  if (str(form, "all") === "1") {
-    const county = str(form, "county");
-    ids = (await db.select("market_detailers", { status: "new" }))
-      .filter((m) => m.email && (!county || m.counties.includes(county))).slice(0, 50).map((m) => m.id);
-  }
-  if (!ids.length) return { error: "No one to invite: everyone with an email has been invited already." };
-  try {
-    const { sent } = await invitePartners(ids);
-    partnerDone();
-    return sent ? { ok: `Invite sent to ${sent} detailer${sent > 1 ? "s" : ""}.` } : { error: "No invites were sent. Check the Outbox for errors." };
-  } catch (e) { return { error: String((e as Error).message ?? e) }; }
-}
-
 export async function setPartnerStatus(form: FormData) {
   await requireStaff(["admin"]);
   const m = await one("market_detailers", { id: str(form, "id") });
   if (!m) return;
   const to = str(form, "status");
   if (to === "unsubscribed") await db.update("market_detailers", { id: m.id }, { status: "unsubscribed", unsubscribed_at: new Date().toISOString() });
+  if (to === "active") await db.update("market_detailers", { id: m.id }, { status: "new", unsubscribed_at: null });
   partnerDone();
 }
 

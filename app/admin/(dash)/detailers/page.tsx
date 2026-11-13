@@ -9,7 +9,7 @@ import { LogoImg } from "@/components/admin/logo-img";
 import { COUNTIES } from "@/lib/config";
 import { canEmailPartners } from "@/lib/partners";
 import type { MarketDetailer } from "@/lib/types";
-import { addPartner, deletePartner, importResearchedPartners, invitePartnerAction, reviewDetailer, setPartnerStatus, updateDetailer, updatePartner } from "../../actions";
+import { addPartner, deletePartner, importResearchedPartners, reviewDetailer, setPartnerStatus, updateDetailer, updatePartner } from "../../actions";
 
 async function SignedUp() {
   const staff = await requireStaff();
@@ -88,8 +88,9 @@ function Logo({ m }: { m: MarketDetailer }) {
   );
 }
 
-const STATUSES = ["all", "opted_in", "invited", "new", "unsubscribed"] as const;
-const STATUS_LABEL: Record<string, string> = { all: "All", opted_in: "Getting jobs", invited: "Invited", new: "Not invited", unsubscribed: "Unsubscribed" };
+const STATUSES = ["all", "active", "no_email", "unsubscribed"] as const;
+const STATUS_LABEL: Record<string, string> = { all: "All", active: "Getting jobs", no_email: "No email", unsubscribed: "Unsubscribed" };
+const stateOf = (m: MarketDetailer) => m.status === "unsubscribed" ? "unsubscribed" : m.email ? "active" : "no_email";
 
 export default async function Detailers({ searchParams }: PageProps<"/admin/detailers">) {
   const staff = await requireStaff();
@@ -106,30 +107,29 @@ export default async function Detailers({ searchParams }: PageProps<"/admin/deta
   };
   const inCounty = partners.filter((m) => !county || m.counties.includes(county));
   const rows = inCounty
-    .filter((m) => status === "all" || m.status === status)
+    .filter((m) => status === "all" || stateOf(m) === status)
     .filter((m) => !q || [m.business_name, m.owner_name, m.email, m.city, m.phone].some((x) => x?.toLowerCase().includes(q)))
-    .sort((a, b) => ["opted_in", "invited", "new", "unsubscribed"].indexOf(a.status) - ["opted_in", "invited", "new", "unsubscribed"].indexOf(b.status) || a.business_name.localeCompare(b.business_name));
-  const mapData: MapPartner[] = inCounty.filter((m) => m.lat != null && m.lon != null).map((m) => ({
+    .sort((a, b) => STATUSES.indexOf(stateOf(a)) - STATUSES.indexOf(stateOf(b)) || a.business_name.localeCompare(b.business_name));
+  const mapData: MapPartner[] = inCounty.filter((m) => m.lat != null && m.lon != null && m.status !== "unsubscribed").map((m) => ({
     id: m.id, name: m.business_name, city: m.city, lat: m.lat!, lon: m.lon!, radius_miles: Number(m.radius_miles) || 15,
-    status: m.status, logo_url: m.logo_url, sent: stats(m.id).sent, won: stats(m.id).won,
+    logo_url: m.logo_url, sent: stats(m.id).sent, won: stats(m.id).won,
   }));
   const totals = { sent: offers.length, responded: offers.filter((x) => x.responded_at && x.status !== "taken").length, won: offers.filter((x) => x.status === "accepted").length };
   const link = (p: Record<string, string>) => "/admin/detailers?" + new URLSearchParams({ ...(county ? { county } : {}), ...(status !== "all" ? { status } : {}), ...(q ? { q } : {}), ...p }).toString();
-  const newWithEmail = inCounty.filter((m) => m.status === "new" && m.email).length;
 
   return (
     <div className="space-y-8">
       <div>
         <h1 className="font-display text-3xl font-extrabold">Detailers</h1>
-        <p className="text-ink-muted">Local detailing businesses in your areas. Opted-in detailers get every new booking in their county by email; the first to accept gets the job.</p>
+        <p className="text-ink-muted">Local detailing businesses in your areas. When a customer books and saves their card, every detailer serving that county gets the job by email. The first to accept gets it.</p>
       </div>
 
       {!canEmailPartners() && (
-        <p className="rounded-2xl bg-amber-100 p-4 text-sm text-amber-900"><b>Emails to detailers are off.</b> U.S. law (CAN-SPAM) requires a postal address in business outreach emails. Add <code>BUSINESS_MAILING_ADDRESS</code> (a P.O. box or virtual mailbox works) to your settings to turn on invites and job emails.</p>
+        <p className="rounded-2xl bg-amber-100 p-4 text-sm text-amber-900"><b>Job emails to detailers are off.</b> U.S. law (CAN-SPAM) requires a postal address in these emails. Add <code>BUSINESS_MAILING_ADDRESS</code> (a P.O. box or virtual mailbox works) to your settings to turn them on.</p>
       )}
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        {[["Detailers", inCounty.length], ["With email", inCounty.filter((m) => m.email).length], ["Getting jobs", inCounty.filter((m) => m.status === "opted_in").length],
+        {[["Detailers", inCounty.length], ["With email", inCounty.filter((m) => m.email).length], ["Getting jobs", inCounty.filter((m) => stateOf(m) === "active").length],
           ["Job emails sent", totals.sent], ["Responses", totals.responded], ["Jobs taken", totals.won]].map(([k, v]) => (
           <div key={k} className="card p-4"><p className="text-xs text-ink-muted">{k}</p><p className="mt-1 font-display text-2xl font-extrabold">{v}</p></div>
         ))}
@@ -146,11 +146,7 @@ export default async function Detailers({ searchParams }: PageProps<"/admin/deta
             <Submit className="btn-primary btn-sm" pending="Loading… (about a minute)">Load researched detailers</Submit>
             <span className="mt-1 text-xs text-ink-muted">Adds new ones only; existing entries are kept.</span>
           </StateForm>
-          <StateForm action={invitePartnerAction} className="flex flex-col items-start">
-            <input type="hidden" name="all" value="1" /><input type="hidden" name="county" value={county} />
-            <Submit className="btn-green btn-sm" pending="Sending…">Invite {newWithEmail ? `${Math.min(newWithEmail, 50)} new` : "new"} detailers{county ? ` in ${county}` : ""}</Submit>
-            <span className="mt-1 text-xs text-ink-muted">One intro email each, max 50 per click. Only those who say yes get jobs.</span>
-          </StateForm>
+          <a href="/admin/detailers/email-preview" target="_blank" className="btn-ghost btn-sm">Preview the job email</a>
           <details className="w-full">
             <summary className="cursor-pointer text-sm font-semibold text-brand">+ Add a detailer by hand</summary>
             <StateForm action={addPartner} className="mt-4 grid gap-3 sm:grid-cols-3">
@@ -180,7 +176,7 @@ export default async function Detailers({ searchParams }: PageProps<"/admin/deta
         <div className="flex flex-wrap items-center gap-2">
           {STATUSES.map((s) => (
             <a key={s} href={link({ status: s === "all" ? "" : s })} className={`rounded-full px-3 py-1.5 text-xs font-semibold ${status === s ? "bg-navy text-white" : "bg-white ring-1 ring-navy/10"}`}>
-              {STATUS_LABEL[s]} ({s === "all" ? inCounty.length : inCounty.filter((m) => m.status === s).length})</a>
+              {STATUS_LABEL[s]} ({s === "all" ? inCounty.length : inCounty.filter((m) => stateOf(m) === s).length})</a>
           ))}
           <form className="ml-auto flex gap-2"><input type="hidden" name="county" value={county} /><input name="q" defaultValue={q} placeholder="Search name, email, city" className="input w-56 py-1.5" /><button className="btn-ghost btn-sm">Search</button></form>
         </div>
@@ -194,7 +190,7 @@ export default async function Detailers({ searchParams }: PageProps<"/admin/deta
                 <div className="flex flex-wrap items-start gap-4">
                   <Logo m={m} />
                   <div className="min-w-0 flex-1">
-                    <p className="flex flex-wrap items-center gap-2 font-display text-lg font-bold">{m.business_name} <Badge status={m.status} /></p>
+                    <p className="flex flex-wrap items-center gap-2 font-display text-lg font-bold">{m.business_name} {stateOf(m) !== "active" && <Badge status={stateOf(m) === "no_email" ? "no_email" : "unsubscribed"} />}</p>
                     <p className="text-sm text-ink-muted">{m.owner_name ? `${m.owner_name} · ` : ""}{m.email ?? <span className="text-amber-700">no email</span>}{m.phone ? ` · ${m.phone}` : ""}
                       {m.website && <> · <a href={m.website} target="_blank" rel="noreferrer noopener" className="text-brand underline">website</a></>}</p>
                     <p className="mt-1 text-sm">{m.city || "City unknown"} · {m.counties.join(", ") || "no county"} · {Number(m.radius_miles)} mi radius{m.lat == null ? " · not on map" : ""}</p>
@@ -207,12 +203,8 @@ export default async function Detailers({ searchParams }: PageProps<"/admin/deta
                 </div>
                 {isAdmin && (
                   <div className="mt-4 flex flex-wrap items-center gap-2">
-                    {m.email && (m.status === "new" || m.status === "invited") && (
-                      <StateForm action={invitePartnerAction}><input type="hidden" name="id" value={m.id} />
-                        <Submit className="btn-green btn-sm" pending="Sending…">{m.status === "invited" ? "Resend invite" : "Send invite"}</Submit></StateForm>
-                    )}
-                    {m.invited_at && <span className="text-xs text-ink-muted">Invited {fmtDay(m.invited_at)}{m.opted_in_at ? ` · joined ${fmtDay(m.opted_in_at)}` : ""}</span>}
                     {m.status !== "unsubscribed" && <form action={setPartnerStatus}><input type="hidden" name="id" value={m.id} /><input type="hidden" name="status" value="unsubscribed" /><button className="btn-ghost btn-sm">Stop emailing</button></form>}
+                    {m.status === "unsubscribed" && <form action={setPartnerStatus}><input type="hidden" name="id" value={m.id} /><input type="hidden" name="status" value="active" /><button className="btn-ghost btn-sm">Email jobs again</button></form>}
                     <details className="w-full">
                       <summary className="cursor-pointer text-sm font-semibold text-brand">Edit details</summary>
                       <form action={updatePartner} className="mt-3 grid gap-3 sm:grid-cols-3">
@@ -243,4 +235,3 @@ export default async function Detailers({ searchParams }: PageProps<"/admin/deta
   );
 }
 
-const fmtDay = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });

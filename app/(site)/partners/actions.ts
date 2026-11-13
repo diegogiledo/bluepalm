@@ -2,13 +2,13 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { DETAILER_COOKIE, cookieOpts } from "@/lib/portal";
-import { acceptOffer, optIn, passOffer, unsubscribe } from "@/lib/partners";
+import { acceptOffer, passOffer, resubscribe, unsubscribe } from "@/lib/partners";
 
 const tok = (f: FormData) => String(f.get("token") ?? "").slice(0, 100);
 
-export async function joinAction(f: FormData) {
-  await optIn(tok(f));
-  redirect(`/partners/${encodeURIComponent(tok(f))}?joined=1`);
+export async function resubscribeAction(f: FormData) {
+  await resubscribe(tok(f));
+  redirect(`/partners/${encodeURIComponent(tok(f))}?back=1`);
 }
 export async function unsubscribeAction(f: FormData) {
   await unsubscribe(tok(f));

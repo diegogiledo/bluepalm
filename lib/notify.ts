@@ -10,7 +10,7 @@ import { BRAND } from "./config";
  */
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
-function emailHtml(title: string, lines: string[], cta?: { label: string; url: string }, footer?: string) {
+function emailHtml(title: string, lines: string[], cta?: { label: string; url: string }) {
   return `<!doctype html><html><body style="margin:0;background:#EAF3FF;font-family:Arial,sans-serif;color:#0B2342">
   <div style="max-width:560px;margin:0 auto;padding:32px 20px">
     <div style="font-weight:800;font-size:20px;color:#1264D6;margin-bottom:16px">BluePalm Auto Care</div>
@@ -20,7 +20,6 @@ function emailHtml(title: string, lines: string[], cta?: { label: string; url: s
       ${cta ? `<p style="margin-top:20px"><a href="${esc(cta.url)}" style="background:#1264D6;color:#fff;padding:12px 20px;border-radius:999px;text-decoration:none;font-weight:700">${esc(cta.label)}</a></p>` : ""}
     </div>
     <p style="font-size:12px;color:#5b6b80;margin-top:16px">${esc(BRAND.tagline)} · ${esc(BRAND.region)}</p>
-    ${footer ?? ""}
   </div></body></html>`;
 }
 
@@ -57,15 +56,18 @@ export const siteUrl = (p: string) => `${BRAND.siteUrl.replace(/\/$/, "")}${p}`;
 /** Postal address required in every business-outreach email (CAN-SPAM). */
 export const mailingAddress = () => (process.env.BUSINESS_MAILING_ADDRESS ?? "").trim();
 
-export type PartnerEmail = { to: string; title: string; lines: string[]; cta: { label: string; url: string }; unsubscribeUrl: string };
+export type PartnerEmail = { to: string; title: string; html: string; text: string; unsubscribeUrl: string };
 
-function partnerFooter(unsub: string) {
-  return `<p style="font-size:12px;color:#5b6b80;margin-top:8px">You're receiving this because your business offers car detailing in the Tampa Bay–Sarasota area. ` +
-    `<a href="${esc(unsub)}" style="color:#5b6b80">Unsubscribe</a> and we won't email you again.<br>${esc(BRAND.name)} · ${esc(mailingAddress())}</p>`;
+/** Footer for every partner email: why they got it, unsubscribe, postal address (CAN-SPAM). */
+export function partnerFooterHtml(unsub: string) {
+  return `<p style="font-size:12px;line-height:1.5;color:#5b6b80;margin:16px 0 0">You got this because ${esc(BRAND.name)} found your business offering car detailing in the Tampa Bay–Sarasota area. ` +
+    `Don't want job emails? <a href="${esc(unsub)}" style="color:#5b6b80">Unsubscribe</a> and we won't email you again.<br>${esc(BRAND.name)} · ${esc(mailingAddress() || "[your mailing address goes here]")}</p>`;
 }
+export const partnerFooterText = (unsub: string) => `Don't want job emails? Unsubscribe: ${unsub}\n${BRAND.name} · ${mailingAddress()}`;
+export { esc as escapeHtml };
 
 /**
- * Send outreach / job emails, up to 100 per Resend call (stays under its
+ * Send job emails to local detailers, up to 100 per Resend call (stays under its
  * per-second limit). Each carries an unsubscribe link, a one-click
  * List-Unsubscribe header and the postal address. Returns how many were
  * accepted by Resend (or logged when no key is set).
@@ -73,7 +75,7 @@ function partnerFooter(unsub: string) {
 export async function sendPartnerEmails(items: PartnerEmail[]): Promise<number> {
   if (!items.length) return 0;
   const key = process.env.RESEND_API_KEY;
-  const textOf = (m: PartnerEmail) => [...m.lines, `${m.cta.label}: ${m.cta.url}`, `Unsubscribe: ${m.unsubscribeUrl}`, `${BRAND.name} · ${mailingAddress()}`].join("\n\n");
+  const textOf = (m: PartnerEmail) => m.text;
   let ok = 0;
   for (let i = 0; i < items.length; i += 100) {
     const chunk = items.slice(i, i + 100);
@@ -89,7 +91,7 @@ export async function sendPartnerEmails(items: PartnerEmail[]): Promise<number> 
         body: JSON.stringify(chunk.map((m) => ({
           from: process.env.EMAIL_FROM || "BluePalm Auto Care <bookings@bluepalmautocare.com>",
           to: [m.to], subject: m.title, text: textOf(m),
-          html: emailHtml(m.title, m.lines, m.cta, partnerFooter(m.unsubscribeUrl)),
+          html: m.html,
           headers: { "List-Unsubscribe": `<${m.unsubscribeUrl}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" },
         }))),
       });
