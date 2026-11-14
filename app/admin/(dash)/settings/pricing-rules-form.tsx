@@ -48,7 +48,7 @@ export function PricingRulesForm({ rules, commission }: { rules: PricingRules; c
           <label className="text-sm font-semibold">Up to (times)<input name="boost_max" type="number" min="1" max="5" defaultValue={rules.boost.maxBoosts} className={n} /></label>
           <label className="text-sm font-semibold">Never below (%)<input name="boost_min" type="number" min="0" max="50" defaultValue={rules.boost.minCommission} className={n} /></label>
         </div>
-        <p className="mt-2 text-xs text-ink-muted">Example with these settings: a $149 job pays the detailer ${(149 * (1 - commission)).toFixed(2)}; after {rules.boost.afterHours} h with no taker it pays ${(149 * (1 - Math.max(commission - rules.boost.step / 100, rules.boost.minCommission / 100))).toFixed(2)}.</p>
+        <p className="mt-2 text-xs text-ink-muted">Example with these settings: a $179 job pays the detailer ${(179 * (1 - commission)).toFixed(2)}; after {rules.boost.afterHours} h with no taker it pays ${(179 * (1 - Math.max(commission - rules.boost.step / 100, rules.boost.minCommission / 100))).toFixed(2)}.</p>
       </section>
       <Submit className="btn-primary btn-sm">Save pricing</Submit>
     </StateForm>

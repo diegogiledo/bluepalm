@@ -27,7 +27,7 @@ export const PACKAGE_SEED: PackageSeed[] = [
     id: "express",
     name: "Express Refresh",
     tagline: "A quick, thorough exterior clean with a light interior touch.",
-    base_price: 59,
+    base_price: 69,
     features: [
       "Exterior hand wash",
       "Wheel and tire cleaning",
@@ -42,7 +42,7 @@ export const PACKAGE_SEED: PackageSeed[] = [
     id: "inside-out",
     name: "Inside & Out",
     tagline: "Our most popular full clean, inside and out.",
-    base_price: 149,
+    base_price: 179,
     features: [
       "Everything in Express Refresh",
       "Interior vacuum",
@@ -58,7 +58,7 @@ export const PACKAGE_SEED: PackageSeed[] = [
     id: "premium",
     name: "Premium Detail",
     tagline: "The deepest clean, with extra care on every surface.",
-    base_price: 229,
+    base_price: 249,
     features: [
       "Everything in Inside & Out",
       "Detailed cracks and crevices",
