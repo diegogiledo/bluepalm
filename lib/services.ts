@@ -1,4 +1,6 @@
 import "server-only";
+import { quote } from "./quote";
+import { pricingRules } from "./pricing-rules";
 import crypto from "crypto";
 import { db, one, getSetting } from "./db";
 import { newId, newToken } from "./auth";
@@ -68,7 +70,7 @@ export async function upsertCustomer(input: { email: string; name: string; phone
 }
 
 export type SavedPayment = { customer: string; paymentMethod: string; label: string };
-export async function createBooking(input: BookingInput, opts: { recurringPlanId?: string; customer?: Customer; payment?: SavedPayment } = {}) {
+export async function createBooking(input: Omit<BookingInput, "addons"> & { addons?: string[] }, opts: { recurringPlanId?: string; customer?: Customer; payment?: SavedPayment } = {}) {
   const area = await checkZip(input.zip);
   if (!area.available) throw new UserError("zip", "We don't serve this ZIP code yet.");
 
@@ -81,6 +83,8 @@ export async function createBooking(input: BookingInput, opts: { recurringPlanId
     pkg = await one("packages", { id: input.package_id });
     if (!pkg?.active) throw new UserError("package_id", "That service is not available.");
   }
+  // price = service + vehicle-size fee + add-ons, always worked out here (never trusted from the browser)
+  const q = pkg ? quote(await pricingRules(), pkg.base_price, input.vehicle, input.addons ?? []) : null;
   let preferred: string | null = null;
   if (input.preferred_detailer_id) {
     const ok = (await detailersForZip(input.zip)).some((d) => d.id === input.preferred_detailer_id);
@@ -117,7 +121,7 @@ export async function createBooking(input: BookingInput, opts: { recurringPlanId
     zip: input.zip, address: input.address, city: input.city,
     vehicle: input.vehicle, vehicle_details: input.vehicle_details ?? "",
     package_id: input.package_id, package_name: pkg?.name ?? "Custom quote",
-    price_estimate: pkg?.base_price ?? null,
+    price_estimate: q?.total ?? null, size_fee: q?.sizeFee ?? 0, addons: q?.addons ?? [], boost_count: 0, boosted_at: null,
     date: input.date, time_window: input.time_window, preferred_detailer_id: preferred,
     instructions: input.instructions ?? "", status: "requested", detailer_id: null,
     recurring_plan_id: planId, commission_rate: null, final_price: null,
@@ -135,7 +139,9 @@ export async function createBooking(input: BookingInput, opts: { recurringPlanId
     `Hi ${customer.name.split(" ")[0]}, thanks for choosing BluePalm.`,
     `${booking.package_name} for your ${vehicleLabel(booking.vehicle).toLowerCase()} on ${booking.date}, ${windowLabel(booking.time_window)}, in ${booking.city}.`,
     `This is a request, not a confirmed appointment yet. Our team will review it and confirm by email shortly.`,
-    booking.price_estimate != null ? `Starting price: ${money(booking.price_estimate)} — the final price may vary with vehicle size and condition. You won't be charged until your service is confirmed.` : "We'll follow up with a custom quote before anything is scheduled.",
+    booking.price_estimate != null
+      ? `Your price: ${money(booking.price_estimate)}${booking.size_fee || booking.addons?.length ? ` (${[`${booking.package_name} ${money(booking.price_estimate - (booking.size_fee ?? 0) - (booking.addons ?? []).reduce((s, a) => s + a.price, 0))}`, booking.size_fee ? `${vehicleLabel(booking.vehicle).toLowerCase()} +${money(booking.size_fee)}` : "", ...(booking.addons ?? []).map((a) => `${a.label} +${money(a.price)}`)].filter(Boolean).join(", ")})` : ""}. If the car needs more work than expected, your detailer may ask to adjust it — you'll approve or decline in your account first. You won't be charged until your service is complete.`
+      : "We'll follow up with a custom quote before anything is scheduled.",
     ...(booking.promo_code ? [`Your ${booking.promo_code} offer is applied: ${booking.discount_pct}% off your final price.`] : []),
     ...(booking.card_label ? [`Payment: ${booking.card_label} is saved securely with Stripe. It's only charged after your service is complete.`] : []),
     POLICIES.cancellation,

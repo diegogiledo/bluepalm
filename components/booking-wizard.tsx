@@ -9,10 +9,12 @@ import { AddressMap, type Pin } from "./address-map";
 import { CardField, cardsEnabled, type CardHandle } from "./card-field";
 
 type Pkg = { id: string; name: string; base_price: number; tagline: string; features: string[] };
+/** What the booking form needs to price a job (from Admin → Pricing & commission). */
+export type FormPricing = { sizeFees: Record<string, number>; addons: { id: string; label: string; price: number; hint: string }[] };
 type Data = {
   zip: string; address: string; city: string; vehicle: string; vehicle_details: string; package_id: string;
   date: string; time_window: string; frequency: string;
-  name: string; email: string; phone: string; instructions: string; website: string; promo: string;
+  name: string; email: string; phone: string; instructions: string; website: string; promo: string; addons: string[];
 };
 const STEPS = ["Your car", "Service & time", "Your details"];
 const LAST = STEPS.length - 1;
@@ -22,7 +24,7 @@ function isoDay(offset: number) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-export function BookingWizard({ packages, initialPackage, initialZip, initialPromo }: { packages: Pkg[]; initialPackage?: string; initialZip?: string; initialPromo?: string }) {
+export function BookingWizard({ packages, pricing, initialPackage, initialZip, initialPromo }: { packages: Pkg[]; pricing: FormPricing; initialPackage?: string; initialZip?: string; initialPromo?: string }) {
   const promo = initialPromo && PROMOS[initialPromo] ? { code: initialPromo, ...PROMOS[initialPromo] } : null;
   const [step, setStep] = useState(0);
   const [dir, setDir] = useState(1);
@@ -31,7 +33,7 @@ export function BookingWizard({ packages, initialPackage, initialZip, initialPro
     package_id: initialPackage && (packages.some((p) => p.id === initialPackage) || initialPackage === "custom") ? initialPackage : "",
     date: "", time_window: "", frequency: "none",
     name: "", email: "", phone: "", instructions: "", website: "", promo: promo?.code ?? "",
-  });
+   addons: [],});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [zipInfo, setZipInfo] = useState<{ city: string; county: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -41,6 +43,11 @@ export function BookingWizard({ packages, initialPackage, initialZip, initialPro
 
   const set = <K extends keyof Data>(k: K, v: Data[K]) => { setD((x) => ({ ...x, [k]: v })); setErrors((e) => ({ ...e, [k]: "" })); };
   const pkg = packages.find((p) => p.id === d.package_id);
+  const sizeFee = pricing.sizeFees[d.vehicle] ?? 0;
+  const chosenAddons = pricing.addons.filter((a) => d.addons.includes(a.id));
+  const total = pkg ? pkg.base_price + sizeFee + chosenAddons.reduce((t, a) => t + a.price, 0) : null;
+  const withPromo = (n: number) => (promo ? Math.round(n * (100 - promo.pct)) / 100 : n);
+  const toggleAddon = (id: string) => setD((x) => ({ ...x, addons: x.addons.includes(id) ? x.addons.filter((a) => a !== id) : [...x.addons, id] }));
   const [help, setHelp] = useState<string | null>(null);
   const cardRef = useRef<CardHandle>(null);
   const [locating, setLocating] = useState(false);
@@ -180,9 +187,9 @@ export function BookingWizard({ packages, initialPackage, initialZip, initialPro
 
   const summary = useMemo(() => [
     ["Your car", `${VEHICLES.find((v) => v.id === d.vehicle)?.label ?? ""}${d.vehicle_details ? ` (${d.vehicle_details})` : ""} · ${d.address}, ${d.city} ${d.zip}`, 0],
-    ["Service", `${pkg ? `${pkg.name} · from $${pkg.base_price}` : d.package_id === "custom" ? "Custom quote" : ""}${promo && pkg ? ` · ${promo.code}: ${promo.pct}% off` : ""}`, 1],
+    ["Service", `${pkg ? `${pkg.name}${chosenAddons.length ? ` + ${chosenAddons.map((a) => a.label).join(", ")}` : ""} · $${total}` : d.package_id === "custom" ? "Custom quote" : ""}${promo && pkg ? ` · ${promo.code}: ${promo.pct}% off ($${withPromo(total ?? 0)})` : ""}`, 1],
     ["When", `${d.date ? new Date(d.date + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }) : ""} · ${TIME_WINDOWS.find((t) => t.id === d.time_window)?.label ?? ""} · ${FREQUENCIES.find((f) => f.id === d.frequency)?.label ?? ""}`, 1],
-  ] as [string, string, number][], [d, pkg]);
+  ] as [string, string, number][], [d, pkg, total, chosenAddons]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (done) {
     return (
@@ -294,6 +301,7 @@ export function BookingWizard({ packages, initialPackage, initialZip, initialPro
                         className={`flex w-full flex-col items-center gap-1 rounded-2xl px-2 pb-3 pt-4 text-center ring-1 transition ${d.vehicle === v.id ? "bg-sky ring-2 ring-brand" : "bg-white ring-navy/10 hover:ring-brand/40"}`}>
                         <VehicleIcon size={v.id} active={d.vehicle === v.id} />
                         <b className="font-display">{v.label}</b>
+                        <span className="text-xs font-semibold text-ink-muted">{(pricing.sizeFees[v.id] ?? 0) > 0 ? `+$${pricing.sizeFees[v.id]}` : "Base price"}</span>
                       </motion.button>
                       <button type="button" onClick={() => setHelp(help === v.id ? null : v.id)} aria-expanded={help === v.id} aria-label={`What counts as a ${v.label.toLowerCase()} vehicle?`}
                         className={`absolute right-1.5 top-1.5 grid h-6 w-6 place-items-center rounded-full text-xs font-extrabold transition ${help === v.id ? "bg-brand text-white" : "bg-navy/5 text-navy/50 hover:bg-sky hover:text-brand"}`}>?</button>
@@ -316,16 +324,16 @@ export function BookingWizard({ packages, initialPackage, initialZip, initialPro
               </Step>
             )}
             {step === 1 && (
-              <Step title="Service & time" sub="Starting prices: your final price is confirmed before you pay.">
+              <Step title="Service & time" sub={sizeFee ? `Prices include +$${sizeFee} for your ${VEHICLES.find((v) => v.id === d.vehicle)?.label.toLowerCase() ?? ""} vehicle.` : "Prices for your vehicle. Add extras below if your car needs them."}>
                 <div className="grid gap-3">
                   {packages.map((p) => (
                     <button type="button" key={p.id} onClick={() => set("package_id", p.id)} aria-pressed={d.package_id === p.id}
                       className={`flex items-start justify-between gap-4 rounded-2xl p-5 text-left ring-1 transition ${d.package_id === p.id ? "bg-sky ring-2 ring-brand" : "ring-navy/10 hover:ring-brand/40"}`}>
                       <span><b className="font-display text-lg">{p.name}</b><span className="mt-1 block text-sm text-ink-muted">{p.features.join(" · ")}</span></span>
-                      <span className="shrink-0 text-right"><span className="block text-xs text-ink-muted">from</span>
+                      <span className="shrink-0 text-right">
                         {promo
-                          ? <><s className="mr-1 text-sm text-ink-muted">${p.base_price}</s><b className="font-display text-2xl text-palm-600">${Math.round(p.base_price * (100 - promo.pct)) / 100}</b></>
-                          : <b className="font-display text-2xl">${p.base_price}</b>}</span>
+                          ? <><s className="mr-1 text-sm text-ink-muted">${p.base_price + sizeFee}</s><b className="font-display text-2xl text-palm-600">${withPromo(p.base_price + sizeFee)}</b></>
+                          : <b className="font-display text-2xl">${p.base_price + sizeFee}</b>}</span>
                     </button>
                   ))}
                   <button type="button" onClick={() => set("package_id", "custom")} aria-pressed={d.package_id === "custom"}
@@ -334,6 +342,27 @@ export function BookingWizard({ packages, initialPackage, initialZip, initialPro
                   </button>
                 </div>
                 {errors.package_id && <p className="field-error">{errors.package_id}</p>}
+                {pkg && pricing.addons.length > 0 && (
+                  <div className="mt-8">
+                    <p className="label">Extras <span className="font-normal text-ink-muted">(optional: pick what your car needs so the price is right up front)</span></p>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {pricing.addons.map((a) => {
+                        const on = d.addons.includes(a.id);
+                        return (
+                          <button type="button" key={a.id} onClick={() => toggleAddon(a.id)} aria-pressed={on}
+                            className={`flex items-start justify-between gap-3 rounded-2xl px-4 py-3 text-left ring-1 transition ${on ? "bg-sky ring-2 ring-brand" : "ring-navy/10 hover:ring-brand/40"}`}>
+                            <span className="flex gap-2.5">
+                              <span className={`mt-0.5 grid size-5 shrink-0 place-items-center rounded-md border-2 text-[11px] font-black ${on ? "border-brand bg-brand text-white" : "border-navy/25"}`} aria-hidden>{on ? "✓" : ""}</span>
+                              <span><b className="block text-sm">{a.label}</b><span className="text-xs text-ink-muted">{a.hint}</span></span>
+                            </span>
+                            <b className="shrink-0 text-sm">+${a.price}</b>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {total != null && <p className="mt-3 text-right text-sm">Your price: <b className="font-display text-xl">${withPromo(total)}</b>{promo && <span className="text-ink-muted"> with {promo.code}</span>}</p>}
+                  </div>
+                )}
                 <div className="mt-8 grid gap-5 sm:grid-cols-2">
                   <Field label="Preferred date" error={errors.date}>
                     <input type="date" className="input" min={isoDay(1)} max={isoDay(120)} value={d.date} onChange={(e) => set("date", e.target.value)} />
@@ -387,7 +416,7 @@ export function BookingWizard({ packages, initialPackage, initialZip, initialPro
                   </section>
                 )}
                 <p className="mt-6 rounded-2xl bg-sky p-4 text-sm text-navy">
-                  {pkg ? <>Starting price <b>${pkg.base_price}</b>{promo ? <>, {promo.pct}% off with <b>{promo.code}</b> if this is your first booking</> : null}. Final price may vary with vehicle size and condition and will be confirmed before payment.</> : <>We&apos;ll send a custom quote before anything is scheduled.</>}
+                  {pkg ? <>Your price <b>${total}</b>{promo ? <>, {promo.pct}% off with <b>{promo.code}</b> if this is your first booking (<b>${withPromo(total ?? 0)}</b>)</> : null}. If your car needs more work than described, your detailer can ask to adjust it. You&apos;ll approve or decline in your account before anything changes.</> : <>We&apos;ll send a custom quote before anything is scheduled.</>}
                   {" "}Submitting sends a request — it is not yet a confirmed appointment.
                 </p>
                 {formError && <p className="field-error mt-4" role="alert">{formError}</p>}

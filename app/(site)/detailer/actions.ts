@@ -56,3 +56,17 @@ export async function connectPayouts() {
   const link = await createAccountLink(account, siteUrl("/detailer?payouts=done"), siteUrl("/detailer?payouts=retry"));
   redirect(link.url);
 }
+
+/** Detailer asks the customer to approve a new price (optional photo). */
+export async function askPriceChange(_: { ok?: string; error?: string } | null, form: FormData): Promise<{ ok?: string; error?: string } | null> {
+  const d = await me();
+  const { requestPriceChange, PriceChangeError } = await import("@/lib/price-changes");
+  const photo = form.get("photo");
+  try {
+    await requestPriceChange(d, String(form.get("id") ?? ""), Number(form.get("new_price")), String(form.get("reason") ?? ""), photo instanceof File ? photo : null);
+    revalidatePath("/detailer");
+    return { ok: "Sent. The customer will approve or decline in their account; we'll email you their answer." };
+  } catch (e) {
+    return { error: e instanceof PriceChangeError ? e.message : "Couldn't send the request. Please try again." };
+  }
+}

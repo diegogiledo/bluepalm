@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { BookingWizard } from "@/components/booking-wizard";
 import { activePackages } from "@/lib/services";
 import { PROMOS } from "@/lib/config";
+import { pricingRules } from "@/lib/pricing-rules";
 
 export const metadata: Metadata = {
   title: "Book Mobile Car Detailing",
@@ -11,6 +12,7 @@ export const dynamic = "force-dynamic";
 
 export default async function BookPage({ searchParams }: PageProps<"/book">) {
   const sp = await searchParams;
+  const rules = await pricingRules();
   const packages = (await activePackages()).map(({ id, name, base_price, tagline, features }) => ({ id, name, base_price, tagline, features }));
   const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
   const zip = one(sp.zip);
@@ -24,7 +26,7 @@ export default async function BookPage({ searchParams }: PageProps<"/book">) {
           <h1 className="h2 mt-4">Let&apos;s get your car sparkling</h1>
           <p className="lead mt-3">A few quick steps. Nothing is charged until after your service.</p>
         </div>
-        <BookingWizard packages={packages} initialPackage={one(sp.package)} initialZip={zip && /^\d{5}$/.test(zip) ? zip : undefined} initialPromo={promo} />
+        <BookingWizard packages={packages} pricing={{ sizeFees: rules.sizeFees, addons: rules.addons.filter((a) => a.active).map(({ id, label, price, hint }) => ({ id, label, price, hint })) }} initialPackage={one(sp.package)} initialZip={zip && /^\d{5}$/.test(zip) ? zip : undefined} initialPromo={promo} />
       </div>
     </div>
   );

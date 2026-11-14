@@ -8,7 +8,7 @@ import { money, publicDetailerName, todayFL, vehicleLabel, windowLabel } from "@
 import { LOYALTY, POLICIES } from "@/lib/config";
 import { Badge, Thread, fmtDate } from "@/components/ui";
 import { RebookForm, Submit } from "@/components/portal-forms";
-import { cancelBooking, rateBooking, rebook, sendCustomerMessage, signOut, updatePlan } from "./actions";
+import { answerPriceChange, cancelBooking, rateBooking, rebook, sendCustomerMessage, signOut, updatePlan } from "./actions";
 
 export const metadata: Metadata = { title: "My bookings", robots: { index: false } };
 export const dynamic = "force-dynamic";
@@ -28,6 +28,7 @@ export default async function AccountPage() {
   const pts = c.loyalty_points % LOYALTY.rewardThreshold;
   const rewards = Math.floor(c.loyalty_points / LOYALTY.rewardThreshold);
   const pkgNames = Object.fromEntries((await db.select("packages")).map((p) => [p.id, p.name]));
+  const pending = (await Promise.all(bookings.map((b) => db.select("price_changes", { booking_id: b.id })))).flat().filter((p) => p.status === "pending");
   const tomorrow = (() => { const d = new Date(todayFL() + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + 1); return d.toISOString().slice(0, 10); })();
 
   return (
@@ -80,12 +81,29 @@ export default async function AccountPage() {
           <ul className="mt-4 space-y-4">
             {upcoming.map((b) => (
               <li key={b.id} className="card p-6">
+                {(() => {
+                  const pc = pending.find((p) => p.booking_id === b.id);
+                  if (!pc) return null;
+                  const after = amountDue({ ...b, final_price: pc.new_price });
+                  return (
+                    <div className="mb-5 rounded-2xl bg-amber-50 p-4 ring-1 ring-amber-300" role="alert">
+                      <p className="font-display font-bold">Your detailer asked to change the price</p>
+                      <p className="mt-1 text-sm">{money(pc.old_price)} → <b>{money(pc.new_price)}</b>{after != null && after !== pc.new_price ? <> ({money(after)} after your promotion)</> : null}</p>
+                      <p className="mt-1 text-sm text-ink-muted">“{pc.reason}”</p>
+                      {pc.photo_file && <a href={`/price-photos/${pc.id}`} target="_blank" rel="noreferrer" className="mt-1 inline-block text-sm font-semibold text-brand underline">See the photo</a>}
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <form action={answerPriceChange}><input type="hidden" name="change" value={pc.id} /><input type="hidden" name="answer" value="approve" /><Submit className="btn-green btn-sm" pending="Saving…">Approve {money(pc.new_price)}</Submit></form>
+                        <form action={answerPriceChange}><input type="hidden" name="change" value={pc.id} /><input type="hidden" name="answer" value="decline" /><Submit className="btn-ghost btn-sm" pending="Saving…">Decline, keep {money(pc.old_price)}</Submit></form>
+                      </div>
+                    </div>
+                  );
+                })()}
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <p className="text-xs font-bold uppercase tracking-wider text-ink-muted">{b.ref}</p>
                     <h3 className="mt-1 font-display text-xl font-bold">{b.package_name}</h3>
                     <p className="text-sm text-ink-muted">{fmtDate(b.date)} · {windowLabel(b.time_window)} · {vehicleLabel(b.vehicle)} · {b.address}, {b.city}</p>
-                    <p className="mt-1 text-sm">Starting price {money(b.price_estimate)}{b.promo_code ? ` · ${b.discount_pct}% off with ${b.promo_code}` : ""}{dName(b.detailer_id) ? ` · Detailer: ${dName(b.detailer_id)}` : ""}</p>
+                    <p className="mt-1 text-sm">Price {money(b.final_price ?? b.price_estimate)}{(b.addons ?? []).length ? ` (incl. ${(b.addons ?? []).map((a) => a.label).join(", ")})` : ""}{b.promo_code ? ` · ${b.discount_pct}% off with ${b.promo_code}` : ""}{dName(b.detailer_id) ? ` · Detailer: ${dName(b.detailer_id)}` : ""}</p>
                     {b.checkout_url && b.payment_status === "payment_link_sent" && <a href={b.checkout_url} className="btn-green btn-sm mt-3">Pay securely</a>}
                     {b.card_label && b.payment_status === "card_on_file" && <p className="mt-1 text-xs text-ink-muted">💳 {b.card_label}: charged after your service</p>}
                     {b.payment_status === "payment_failed" && <p className="mt-1 text-xs font-semibold text-red-600">We couldn&apos;t charge your saved card. We&apos;ll email you a secure payment link.</p>}

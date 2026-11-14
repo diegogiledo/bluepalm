@@ -27,7 +27,7 @@ export default async function JobPage({ params, searchParams }: PageProps<"/jobs
   if (!b || !m) notFound();
   const open = jobOpen(b) && offer.status === "sent" && m.status !== "unsubscribed";
   const due = amountDue(b);
-  const rate = await commissionFor(null);
+  const rate = b.commission_rate ?? (await commissionFor(null)); // boosted jobs pay more
   // the detailer who won it sees that it's theirs, not "someone else took it"
   const mine = offer.status === "accepted";
   const note = mine ? MSG.yours : typeof result === "string" ? MSG[result] : !open ? (offer.status === "passed" ? MSG.passed : b.detailer_id ? MSG.taken : MSG.closed) : null;
@@ -39,6 +39,7 @@ export default async function JobPage({ params, searchParams }: PageProps<"/jobs
         <h1 className="mt-3 font-display text-3xl font-extrabold">{b.package_name} in {b.city}</h1>
         <dl className="mt-4 divide-y divide-navy/10 text-sm">
           <Row k="Vehicle" v={vehicleLabel(b.vehicle)} />
+          {(b.addons ?? []).length > 0 && <Row k="Extras" v={(b.addons ?? []).map((a) => a.label).join(", ")} />}
           <Row k="When" v={`${b.date}, ${windowLabel(b.time_window)}`} />
           <Row k="Area" v={`${b.city} ${b.zip}`} />
           <Row k="Your payout" v={due != null ? `about ${money(Math.round(due * (1 - rate) * 100) / 100)}` : "Custom quote"} />

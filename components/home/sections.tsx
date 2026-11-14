@@ -81,7 +81,7 @@ export function Services({ packages }: { packages: Package[] }) {
           })}
         </Stagger>
         <Reveal className="mt-8 text-center text-sm text-ink-muted">
-          Starting prices — may vary with vehicle size and condition. <Link href="/book?package=custom" className="font-semibold text-brand hover:underline">Custom quote</Link>
+          Prices shown are for a small car. Larger vehicles and extras like pet hair or odor removal cost a little more; you'll see your exact price before you book. <Link href="/book?package=custom" className="font-semibold text-brand hover:underline">Custom quote</Link>
         </Reveal>
       </div>
     </section>

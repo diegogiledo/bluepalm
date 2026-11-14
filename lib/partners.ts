@@ -69,7 +69,7 @@ export async function jobEmail(b: Booking, m: Pick<MarketDetailer, "business_nam
       <h1 style="font-size:24px;line-height:1.25;margin:0 0 12px">${pay ? `Earn ${e(pay)} detailing a car in ${e(b.city)}` : `A customer in ${e(b.city)} needs a detailer`}</h1>
       <p style="line-height:1.55;margin:0 0 16px">Hi ${e(hi)}, a customer near you just booked a detail with BluePalm and we'd like <b>${e(m.business_name)}</b> to do it.</p>
       <table style="width:100%;border-collapse:collapse;font-size:15px;border-top:1px solid #e5edf7;border-bottom:1px solid #e5edf7;margin-bottom:20px">
-        ${row("Service", b.package_name)}${row("Vehicle", vehicleLabel(b.vehicle))}${row("When", when)}${row("Where", `${b.city} ${b.zip}`)}
+        ${row("Service", b.package_name)}${(b.addons ?? []).length ? row("Extras", (b.addons ?? []).map((a) => a.label).join(", ")) : ""}${row("Vehicle", vehicleLabel(b.vehicle))}${row("When", when)}${row("Where", `${b.city} ${b.zip}`)}
         ${row("You earn", pay ?? "Custom quote, agreed before the job")}
       </table>
       <p style="text-align:center;margin:0 0 8px"><a href="${e(acceptUrl)}" style="display:inline-block;background:#16a34a;color:#fff;padding:14px 28px;border-radius:999px;text-decoration:none;font-weight:800;font-size:16px">Accept this job</a></p>
@@ -188,7 +188,8 @@ export async function acceptOffer(token: string, opts: { simulated?: boolean } =
   }
   const d = await detailerFor(m);
   if (d.status !== "approved") return { ok: false, reason: "invalid" }; // suspended or rejected account
-  const rate = await commissionFor(d.id);
+  // a boosted job keeps its lower cut (higher payout) for whoever takes it
+  const rate = (b.boost_count ?? 0) > 0 && b.commission_rate != null ? Math.min(b.commission_rate, await commissionFor(d.id)) : await commissionFor(d.id);
   const wasRequested = b.status === "requested";
   // Only one update can win: it must still have the status we read.
   const claimed = await db.update("bookings", { id: b.id, status: b.status }, { status: "assigned", detailer_id: d.id, commission_rate: rate });

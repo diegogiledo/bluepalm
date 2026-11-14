@@ -78,6 +78,7 @@ export async function rebook(_: unknown, form: FormData) {
       zip: b.zip, address: b.address, city: b.city, vehicle: b.vehicle, vehicle_details: b.vehicle_details,
       package_id: b.package_id, date, time_window, preferred_detailer_id: b.detailer_id ?? b.preferred_detailer_id,
       frequency: "none", name: c.name, email: c.email, phone: c.phone, instructions: b.instructions, promo: "", setup_intent: "",
+      addons: (b.addons ?? []).map((x) => x.id), // same extras as last time
     }, { customer: c, payment: savedPaymentOf(b) });
     revalidatePath("/account");
     return { ok: `Request ${booking.ref} submitted — we'll confirm shortly.` };
@@ -110,4 +111,12 @@ export async function sendDetailerMessage(form: FormData) {
   if (!b || b.detailer_id !== d.id) return;
   await addMessage(b.id, "detailer", String(form.get("body") ?? ""));
   revalidatePath("/detailer");
+}
+
+/** Customer approves or declines a detailer's price change. */
+export async function answerPriceChange(form: FormData) {
+  const c = await customerOrRedirect();
+  const { decidePriceChange } = await import("@/lib/price-changes");
+  await decidePriceChange(c, String(form.get("change") ?? ""), String(form.get("answer")) === "approve");
+  revalidatePath("/account");
 }

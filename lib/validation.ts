@@ -22,6 +22,7 @@ export const bookingSchema = z.object({
   instructions: text(1000).optional().default(""),
   promo: z.string().trim().max(24).optional().default(""),
   setup_intent: z.string().trim().max(100).optional().default(""),
+  addons: z.array(z.string().trim().max(40)).max(12).optional().default([]),
   website: z.string().max(0).optional(), // honeypot
 });
 export type BookingInput = z.infer<typeof bookingSchema>;

@@ -61,6 +61,7 @@ create table if not exists bookings (
   payment_intent text, checkout_url text, cancel_reason text not null default '',
   promo_code text, discount_pct numeric(5,2) not null default 0,
   stripe_customer_id text, payment_method_id text, card_label text, payment_error text,
+  size_fee numeric(10,2) not null default 0, addons jsonb not null default '[]', boost_count integer not null default 0, boosted_at timestamptz,
   customer_rating smallint check (customer_rating between 1 and 5), customer_feedback text not null default '',
   created_at timestamptz not null default now(), completed_at timestamptz
 );
@@ -114,8 +115,19 @@ create table if not exists expenses (
 );
 create index if not exists expenses_month_idx on expenses(month);
 
+create table if not exists price_changes (
+  id uuid primary key,
+  booking_id uuid not null references bookings(id) on delete cascade,
+  detailer_id uuid not null references detailers(id) on delete cascade,
+  old_price numeric(10,2) not null, new_price numeric(10,2) not null check (new_price > 0),
+  reason text not null default '', photo_file text,
+  status text not null default 'pending' check (status in ('pending','approved','declined','withdrawn')),
+  created_at timestamptz not null default now(), decided_at timestamptz
+);
+create index if not exists price_changes_booking_idx on price_changes(booking_id);
+
 do $$ declare t text; begin
-  foreach t in array array['packages','service_zips','settings','staff','customers','detailers','recurring_plans','bookings','messages','outbox','market_detailers','job_offers','expenses'] loop
+  foreach t in array array['packages','service_zips','settings','staff','customers','detailers','recurring_plans','bookings','messages','outbox','market_detailers','job_offers','expenses','price_changes'] loop
     execute format('alter table %I enable row level security', t);
   end loop;
 end $$;

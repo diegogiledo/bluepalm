@@ -56,6 +56,10 @@ export type Booking = {
   promo_code: string | null; discount_pct: number;
   stripe_customer_id: string | null; payment_method_id: string | null; card_label: string | null; payment_error: string | null;
   payment_intent: string | null; checkout_url: string | null;
+  /** priced at booking: vehicle-size fee and chosen add-ons (both included in price_estimate) */
+  size_fee?: number; addons?: { id: string; label: string; price: number }[];
+  /** how many times the detailer payout was raised because nobody accepted */
+  boost_count?: number; boosted_at?: string | null;
   cancel_reason: string; customer_rating: number | null; customer_feedback: string;
   created_at: string; completed_at: string | null;
 };
@@ -75,12 +79,17 @@ export type Outbox = {
 export type StaffRole = "admin" | "dispatcher";
 export type Staff = { email: string; role: StaffRole; name: string };
 
+/** A detailer's request to change the price of a job; the customer approves or declines. */
+export type PriceChange = {
+  id: string; booking_id: string; detailer_id: string; old_price: number; new_price: number; reason: string;
+  photo_file: string | null; status: "pending" | "approved" | "declined" | "withdrawn"; created_at: string; decided_at: string | null;
+};
 /** A monthly operating expense entered in the Finance tab (for EBITDA). */
 export type Expense = { id: string; month: string; category: string; amount: number; note: string; created_at: string };
 
 export type Tables = {
   packages: Package; service_zips: ServiceZip; settings: Setting; customers: Customer;
   detailers: Detailer; bookings: Booking; recurring_plans: RecurringPlan; messages: Message;
-  outbox: Outbox; staff: Staff; market_detailers: MarketDetailer; job_offers: JobOffer; expenses: Expense;
+  outbox: Outbox; staff: Staff; market_detailers: MarketDetailer; job_offers: JobOffer; expenses: Expense; price_changes: PriceChange;
 };
 export type TableName = keyof Tables;

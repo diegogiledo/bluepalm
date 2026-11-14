@@ -394,3 +394,44 @@ export async function deleteExpense(form: FormData) {
   await db.remove("expenses", { id: str(form, "id") });
   revalidatePath("/admin/finance");
 }
+
+// ---------- pricing rules: size fees, add-ons, payout boost ----------
+export async function savePricingRules(_: PartnerState, form: FormData): Promise<PartnerState> {
+  await requireStaff(["admin"]);
+  const { pricingRules } = await import("@/lib/pricing-rules");
+  const cur = await pricingRules();
+  const money = (k: string, max = 1000) => { const n = num(form, k); return n >= 0 && n <= max ? Math.round(n) : null; };
+  const sizeFees = { small: money("size_small") ?? cur.sizeFees.small, medium: money("size_medium") ?? cur.sizeFees.medium, large: money("size_large") ?? cur.sizeFees.large };
+  const addons = cur.addons.map((a) => ({
+    ...a,
+    label: str(form, `addon_${a.id}_label`).slice(0, 60) || a.label,
+    price: money(`addon_${a.id}_price`) ?? a.price,
+    hint: str(form, `addon_${a.id}_hint`).slice(0, 100),
+    active: form.get(`addon_${a.id}_active`) === "on",
+  })).filter((a) => form.get(`addon_${a.id}_remove`) !== "on");
+  const newLabel = str(form, "addon_new_label").slice(0, 60);
+  const newPrice = money("addon_new_price");
+  if (newLabel && newPrice != null) {
+    const id = newLabel.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 30) || `addon_${Date.now()}`;
+    if (!addons.some((a) => a.id === id)) addons.push({ id, label: newLabel, price: newPrice, hint: str(form, "addon_new_hint").slice(0, 100), active: true });
+  }
+  const boost = {
+    enabled: form.get("boost_enabled") === "on",
+    afterHours: Math.min(Math.max(num(form, "boost_after") || cur.boost.afterHours, 1), 48),
+    step: Math.min(Math.max(num(form, "boost_step") || cur.boost.step, 1), 20),
+    maxBoosts: Math.min(Math.max(Math.round(num(form, "boost_max") || cur.boost.maxBoosts), 1), 5),
+    minCommission: Math.min(Math.max(num(form, "boost_min") ?? cur.boost.minCommission, 0), 50),
+  };
+  await setSetting("pricing_rules", { sizeFees, addons, boost });
+  revalidatePath("/", "layout");
+  return { ok: "Pricing saved. New bookings use it right away." };
+}
+
+/** Run the payout boost check now (it also runs hourly on the live site). */
+export async function runBoostNow(_: PartnerState): Promise<PartnerState> {
+  await requireStaff(["admin"]);
+  const { runBoosts } = await import("@/lib/boost");
+  const r = await runBoosts();
+  revalidatePath("/admin", "layout");
+  return { ok: r.boosted.length ? `Boosted ${r.boosted.join(", ")}; re-sent ${r.emailed} job emails.` : "No jobs needed a boost right now." };
+}

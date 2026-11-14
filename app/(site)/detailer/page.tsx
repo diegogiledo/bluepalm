@@ -7,7 +7,9 @@ import { commissionFor, money, todayFL, vehicleLabel, windowLabel } from "@/lib/
 import { connectedAccountReady, stripeEnabled } from "@/lib/stripe";
 import { Badge, Thread, fmtDate } from "@/components/ui";
 import { Submit } from "@/components/portal-forms";
-import { acceptJob, connectPayouts, markComplete } from "./actions";
+import { acceptJob, askPriceChange, connectPayouts, markComplete } from "./actions";
+import { PriceChangeForm } from "@/components/portal-forms";
+import { listPrice } from "@/lib/pricing";
 import { sendDetailerMessage, signOut } from "../account/actions";
 
 export const metadata: Metadata = { title: "Detailer portal", robots: { index: false } };
@@ -25,6 +27,7 @@ export default async function DetailerPortal({ searchParams }: PageProps<"/detai
   const [bookings, zips, customers, messages] = await Promise.all([
     db.select("bookings"), db.select("service_zips"), db.select("customers"), db.select("messages"),
   ]);
+  const changes = await db.select("price_changes", { detailer_id: d.id });
   const today = todayFL();
   const countyOf = Object.fromEntries(zips.map((z) => [z.zip, z.county]));
   const rate = await commissionFor(d.id);
@@ -116,6 +119,8 @@ export default async function DetailerPortal({ searchParams }: PageProps<"/detai
                       <p className="text-sm text-ink-muted">{fmtDate(b.date)} · {windowLabel(b.time_window)}</p>
                       <p className="text-sm">{b.address}, {b.city} {b.zip}</p>
                       <p className="text-sm">{vehicleLabel(b.vehicle)}{b.vehicle_details ? ` — ${b.vehicle_details}` : ""}</p>
+                      {(b.addons ?? []).length > 0 && <p className="text-sm"><b>Extras:</b> {(b.addons ?? []).map((a) => a.label).join(", ")}</p>}
+                      <p className="text-sm">Job price {money(listPrice(b))} · you earn about {money(Math.round(payout(amountDue(b), b.commission_rate) * 100) / 100)}</p>
                     </div>
                     <Badge status={b.status} />
                   </div>
@@ -127,6 +132,21 @@ export default async function DetailerPortal({ searchParams }: PageProps<"/detai
                       <input name="body" required maxLength={1500} className="input py-2" placeholder="Message the customer through BluePalm" />
                       <Submit className="btn-primary btn-sm" pending="…">Send</Submit></form>
                   </details>
+                  {(() => {
+                    const mine = changes.filter((c) => c.booking_id === b.id).sort((x, y) => y.created_at.localeCompare(x.created_at));
+                    const open = mine.find((c) => c.status === "pending");
+                    return (
+                      <div className="mt-4 rounded-2xl p-4 ring-1 ring-navy/10">
+                        {mine[0] && <p className="mb-2 text-sm">Last price request: {money(mine[0].old_price)} → {money(mine[0].new_price)} · <b className={mine[0].status === "approved" ? "text-palm-600" : mine[0].status === "declined" ? "text-red-600" : "text-amber-700"}>{mine[0].status === "pending" ? "waiting for the customer" : mine[0].status}</b></p>}
+                        {!open && b.payment_status !== "paid" && (
+                          <details>
+                            <summary className="cursor-pointer text-sm font-semibold text-brand">Car needs more work than described? Ask to change the price</summary>
+                            <PriceChangeForm action={askPriceChange} bookingId={b.id} current={listPrice(b) ?? 0} />
+                          </details>
+                        )}
+                      </div>
+                    );
+                  })()}
                   {b.date <= today
                     ? <form action={markComplete} className="mt-4"><input type="hidden" name="id" value={b.id} />
                         <Submit className="btn-green btn-sm" pending="Saving…">Mark job complete</Submit></form>

@@ -2,12 +2,15 @@ import { requireStaff } from "@/lib/auth";
 import { db, getSetting } from "@/lib/db";
 import { Submit } from "@/components/portal-forms";
 import { saveCommission, savePackage } from "../../actions";
+import { pricingRules } from "@/lib/pricing-rules";
+import { PricingRulesForm, RunBoostNow } from "./pricing-rules-form";
 
 export default async function Settings() {
   await requireStaff(["admin"]);
   const packages = (await db.select("packages")).sort((a, b) => a.sort - b.sort);
   const rate = await getSetting("commission_rate", 0.2);
   const pts = await getSetting("loyalty_points_per_dollar", 1);
+  const rules = await pricingRules();
   return (
     <div className="space-y-8">
       <h1 className="font-display text-3xl font-extrabold">Pricing & commission</h1>
@@ -17,12 +20,15 @@ export default async function Settings() {
         <Submit className="btn-primary btn-sm">Save</Submit>
         <p className="w-full text-xs text-ink-muted">Commission is locked onto each booking when a detailer is assigned. Per-detailer overrides are set on the Detailers page.</p>
       </form>
+      <PricingRulesForm rules={rules} commission={rate} />
+      <RunBoostNow />
+      <h2 className="font-display text-xl font-extrabold">Services</h2>
       <div className="grid gap-6 xl:grid-cols-3">
         {packages.map((p) => (
           <form key={p.id} action={savePackage} className="card space-y-3 p-6">
             <input type="hidden" name="id" value={p.id} />
             <label className="block text-sm font-semibold">Name<input name="name" defaultValue={p.name} className="input mt-1 py-2" /></label>
-            <label className="block text-sm font-semibold">Starting price ($)<input name="base_price" type="number" min="1" defaultValue={p.base_price} className="input mt-1 py-2" /></label>
+            <label className="block text-sm font-semibold">Base price, small vehicle ($)<input name="base_price" type="number" min="1" defaultValue={p.base_price} className="input mt-1 py-2" /></label>
             <label className="block text-sm font-semibold">Tagline<input name="tagline" defaultValue={p.tagline} className="input mt-1 py-2" /></label>
             <label className="block text-sm font-semibold">Duration hint<input name="duration_hint" defaultValue={p.duration_hint} className="input mt-1 py-2" /></label>
             <label className="block text-sm font-semibold">Features (one per line)<textarea name="features" defaultValue={p.features.join("\n")} className="input mt-1 min-h-32 py-2" /></label>

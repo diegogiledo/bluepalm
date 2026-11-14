@@ -21,6 +21,7 @@ export default async function BookingDetail({ params }: PageProps<"/admin/bookin
   const assigned = b.detailer_id ? await one("detailers", { id: b.detailer_id }) : null;
   const partner = assigned ? (await db.select("market_detailers", { detailer_id: assigned.id }))[0] ?? null : null;
   const offers = await db.select("job_offers", { booking_id: b.id });
+  const changes = (await db.select("price_changes", { booking_id: b.id })).sort((x, y) => y.created_at.localeCompare(x.created_at));
   const eligible = detailers.filter((d) => zip && d.counties.includes(zip.county));
   const rate = b.commission_rate ?? (await commissionFor(b.detailer_id));
   const price = amountDue(b); // what the customer pays, after any promotion
@@ -44,7 +45,11 @@ export default async function BookingDetail({ params }: PageProps<"/admin/bookin
             <Row k="Date & window" v={`${fmtDate(b.date)} · ${windowLabel(b.time_window)}`} />
             <Row k="Location" v={`${b.address}, ${b.city} ${b.zip}${zip ? ` (${zip.county})` : ""}`} />
             <Row k="Instructions" v={b.instructions || "—"} />
-            <Row k="Starting price" v={money(b.price_estimate)} />
+            {(b.addons ?? []).length > 0 && <Row k="Extras" v={(b.addons ?? []).map((a) => `${a.label} +${money(a.price)}`).join(", ")} />}
+            {(b.size_fee ?? 0) > 0 && <Row k="Vehicle size fee" v={`+${money(b.size_fee)}`} />}
+            <Row k="Price at booking" v={money(b.price_estimate)} />
+            {(b.boost_count ?? 0) > 0 && <Row k="Payout boosted" v={`${b.boost_count}× (BluePalm cut now ${Math.round((b.commission_rate ?? 0) * 100)}%)`} />}
+            {changes.map((c) => <Row key={c.id} k={`Price request ${new Date(c.created_at).toLocaleDateString()}`} v={<span>{money(c.old_price)} → {money(c.new_price)} · <b>{c.status}</b>{c.photo_file && <> · <a href={`/price-photos/${c.id}`} target="_blank" rel="noreferrer" className="text-brand underline">photo</a></>}<span className="block text-xs text-ink-muted">{c.reason}</span></span>} />)}
             <Row k="Final price" v={money(b.final_price)} />
             {b.promo_code && <Row k="Promotion" v={`${b.promo_code}: ${b.discount_pct}% off`} />}
             <Row k="Customer pays" v={money(price)} />

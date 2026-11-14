@@ -28,7 +28,7 @@ const DB_FILE = path.join(DATA_DIR, "dev-db.json");
 type Mem = { [K in TableName]: Tables[K][] };
 const EMPTY: Mem = {
   packages: [], service_zips: [], settings: [], customers: [], detailers: [], bookings: [],
-  recurring_plans: [], messages: [], outbox: [], staff: [], market_detailers: [], job_offers: [], expenses: [],
+  recurring_plans: [], messages: [], outbox: [], staff: [], market_detailers: [], job_offers: [], expenses: [], price_changes: [],
 };
 let mem: Mem | null = null;
 let queue: Promise<unknown> = Promise.resolve();
