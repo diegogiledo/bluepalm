@@ -20,7 +20,7 @@ export default function SiteLayout({ children }: LayoutProps<"/">) {
       <footer className="bg-navy text-white/75">
         <div className="container-x grid gap-10 py-16 md:grid-cols-4">
           <div className="md:col-span-1">
-            <Logo light />
+            <Link href="/" aria-label="BluePalm Auto Care home" className="inline-block"><Logo light /></Link>
             <p className="mt-4 text-sm leading-relaxed">{BRAND.tagline} Mobile car detailing marketplace serving {BRAND.region}.</p>
           </div>
           <div>

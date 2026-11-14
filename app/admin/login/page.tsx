@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { LogoMark } from "@/components/logo";
 import { AdminLoginForm } from "./form";
 import { isSupabase } from "@/lib/db";
@@ -10,7 +11,7 @@ export default function AdminLogin() {
   return (
     <div className="grid min-h-screen place-items-center bg-navy px-4">
       <div className="w-full max-w-sm rounded-3xl bg-white p-8 shadow-lift">
-        <LogoMark className="h-11 w-11" />
+        <Link href="/" aria-label="BluePalm Auto Care home" className="inline-block"><LogoMark className="h-11 w-11" /></Link>
         <h1 className="mt-5 font-display text-2xl font-extrabold">BluePalm admin</h1>
         <p className="mb-6 mt-1 text-sm text-ink-muted">Staff access only.</p>
         {unconfigured && <p className="mb-4 rounded-xl bg-amber-100 p-3 text-xs text-amber-900">No staff accounts configured. Set ADMIN_EMAIL and ADMIN_PASSWORD (10+ characters) in .env.local.</p>}

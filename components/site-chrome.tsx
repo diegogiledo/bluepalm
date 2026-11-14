@@ -36,7 +36,9 @@ export function Nav() {
     >
       <div className={`transition-all duration-300 ${solid ? "bg-white/85 shadow-[0_8px_30px_-12px_rgb(11_35_66/0.18)] backdrop-blur-xl" : "bg-transparent"}`}>
         <nav className={`container-x flex items-center justify-between transition-all duration-300 ${solid ? "h-16" : "h-20"}`} aria-label="Main">
-          <Link href="/" aria-label="BluePalm Auto Care home"><Logo light={!solid} /></Link>
+          {/* always to the homepage; if already there, back to the top */}
+          <Link href="/" aria-label="BluePalm Auto Care home"
+            onClick={() => { if (window.location.pathname === "/") window.scrollTo({ top: 0, behavior: "smooth" }); }}><Logo light={!solid} /></Link>
           <ul className="hidden items-center gap-1 lg:flex">
             {LINKS.map((l) => (
               <li key={l.href}>

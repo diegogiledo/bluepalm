@@ -35,7 +35,7 @@ export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
       {/* picks light or dark before the page paints (no white flash at night) */}
       <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
       <aside className="admin-sidebar bg-navy p-5 text-white lg:sticky lg:top-0 lg:h-screen lg:overflow-y-auto">
-        <Link href="/admin"><Logo light /></Link>
+        <Link href="/" aria-label="BluePalm Auto Care home"><Logo light /></Link>
         <nav className="mt-8 flex gap-1 overflow-x-auto lg:flex-col" aria-label="Admin">
           {NAV.filter((n) => !n.admin || staff.role === "admin").map((n) => (
             <Link key={n.href} href={n.href} className="shrink-0 rounded-xl px-3 py-2.5 text-sm font-semibold text-white/75 hover:bg-white/10 hover:text-white">{n.label}</Link>
